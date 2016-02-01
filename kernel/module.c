@@ -86,6 +86,7 @@ int modules_disabled = 0;
 /* Waiting for a module to finish initializing? */
 static DECLARE_WAIT_QUEUE_HEAD(module_wq);
 
+// 定义并初始化一个类型为struct blocking_notify_head的对象
 static BLOCKING_NOTIFIER_HEAD(module_notify_list);
 
 /* Bounds of module allocation, for speeding __module_address */
@@ -171,6 +172,9 @@ static void *section_objs(Elf_Ehdr *hdr,
 	return (void *)sechdrs[sec].sh_addr;
 }
 
+/*
+ * 这些变量由链接脚本提供
+ */
 /* Provided by the linker */
 extern const struct kernel_symbol __start___ksymtab[];
 extern const struct kernel_symbol __stop___ksymtab[];
@@ -802,6 +806,7 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 	if (!capable(CAP_SYS_MODULE) || modules_disabled)
 		return -EPERM;
 
+   // 将来自用户空间的将要卸载的模块名复制到内核空间
 	if (strncpy_from_user(name, name_user, MODULE_NAME_LEN-1) < 0)
 		return -EFAULT;
 	name[MODULE_NAME_LEN-1] = '\0';
@@ -817,12 +822,16 @@ SYSCALL_DEFINE2(delete_module, const char __user *, name_user,
 		goto out_stop;
 	}
 
+   // 在modules链表中遍历每一个模块
 	mod = find_module(name);
 	if (!mod) {
 		ret = -ENOENT;
 		goto out;
 	}
 
+   // 找到了要卸载的模块。
+   // 检查是否有别的模块依赖该要卸载的模块。
+   // 为了系统的稳定，一个有依赖关系的模块不应该从系统中卸载掉。
 	if (!list_empty(&mod->modules_which_use_me)) {
 		/* Other modules depend on us: get rid of them first. */
 		ret = -EWOULDBLOCK;
@@ -2092,12 +2101,20 @@ static inline void kmemleak_load_module(struct module *mod, Elf_Ehdr *hdr,
 }
 #endif
 
+/*
+ * 内核模块加载中最核心的函数，负责最艰苦的模块加载全过程
+ */
 /* Allocate and load the module: note that size of section 0 is always
    zero, and we rely on this for optional sections. */
 static noinline struct module *load_module(void __user *umod,
 				  unsigned long len,
 				  const char __user *uargs)
 {
+   /* 用户空间程序insmod首先通过文件系统接口读取内核模块的文件数据，
+    * 将其放在一块用户空间的存储区域中（void *umod）
+    * 然后通过系统调用sys_init_module进入到内核态，将umod传递进来
+    * 传递进来的参数还是长度，和存放模块参数的地址空间指针uargs
+    */
 	Elf_Ehdr *hdr;
 	Elf_Shdr *sechdrs;
 	char *secstrings, *args, *modmagic, *strtab = NULL;
@@ -2118,6 +2135,11 @@ static noinline struct module *load_module(void __user *umod,
 	if (len < sizeof(*hdr))
 		return ERR_PTR(-ENOEXEC);
 
+   /*
+    * 在内核空间利用vmalloc分配一块len的地址空间，
+    * 然后将用户空间的文件数据复制到内核空间，
+    * 从而在内核空间构造出一个ELF静态的内存视图。
+    */
 	/* Suck in entire file: we'll want most of it. */
 	/* vmalloc barfs on "unusual" numbers.  Check here */
 	if (len > 64 * 1024 * 1024 || (hdr = vmalloc(len)) == NULL)
@@ -2143,9 +2165,12 @@ static noinline struct module *load_module(void __user *umod,
 
 	/* Convenience variables */
 	sechdrs = (void *)hdr + hdr->e_shoff;
+   // section名称字符串表的基地址
 	secstrings = (void *)hdr + sechdrs[hdr->e_shstrndx].sh_offset;
 	sechdrs[0].sh_addr = 0;
 
+   // 遍历section header table中所有的entry
+   // 找到SHT_SYMTAB的entry
 	for (i = 1; i < hdr->e_shnum; i++) {
 		if (sechdrs[i].sh_type != SHT_NOBITS
 		    && len < sechdrs[i].sh_offset + sechdrs[i].sh_size)
@@ -2159,6 +2184,7 @@ static noinline struct module *load_module(void __user *umod,
 		if (sechdrs[i].sh_type == SHT_SYMTAB) {
 			symindex = i;
 			strindex = sechdrs[i].sh_link;
+         // 符号名称字符串表所在section的基地址
 			strtab = (char *)hdr + sechdrs[strindex].sh_offset;
 		}
 #ifndef CONFIG_MODULE_UNLOAD
@@ -2609,12 +2635,14 @@ SYSCALL_DEFINE3(init_module, void __user *, umod,
 	/* Drop lock so they can recurse */
 	mutex_unlock(&module_mutex);
 
+   // 通知通知链上的各节点，一个模块正在被加进来
 	blocking_notifier_call_chain(&module_notify_list,
 			MODULE_STATE_COMING, mod);
 
 	do_mod_ctors(mod);
 	/* Start the module */
 	if (mod->init != NULL)
+      // 如果内核模块提供了初始化函数，调用它
 		ret = do_one_initcall(mod->init);
 	if (ret < 0) {
 		/* Init routine failed: abort.  Try to protect us from
@@ -2639,15 +2667,20 @@ SYSCALL_DEFINE3(init_module, void __user *, umod,
 		dump_stack();
 	}
 
+   // 初始化函数成功调用了，模块就算是被加载进了系统。
+   // 更新模块的状态
 	/* Now it's a first class citizen!  Wake up anyone waiting for it. */
 	mod->state = MODULE_STATE_LIVE;
 	wake_up(&module_wq);
+   // 通知通知链上的各节点，一个模块已经加载完成了
 	blocking_notifier_call_chain(&module_notify_list,
 				     MODULE_STATE_LIVE, mod);
 
 	/* We need to finish all async code before the module init sequence is done */
 	async_synchronize_full();
 
+   // 模块一旦被成功加载，HDR视图和INIT section所占的内存区域就不再会用到
+   // 可以释放它们。
 	mutex_lock(&module_mutex);
 	/* Drop initial reference. */
 	module_put(mod);

@@ -95,6 +95,14 @@ struct ieee1394_device_id {
  * matches towards the beginning of your table, so that driver_info can
  * record quirks of specific products.
  */
+
+/*
+ * 对于每一个USB设备来说，这个结构体就相当于它的身份证。
+ * 它记录了一些基本信息
+ * 一个usb_driver会把它的id表和每一个USB设备的实际情况进行比较。
+ * 如果该设备的实际情况和这张表里的某一个id相同，准确地说，只有这许多特征都吻合，
+ * 才能够把一个USB设备和这个USB驱动进行绑定。
+ */
 struct usb_device_id {
 	/* which fields to match against? */
 	__u16		match_flags;

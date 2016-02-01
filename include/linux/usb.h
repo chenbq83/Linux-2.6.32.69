@@ -874,6 +874,10 @@ struct usb_driver {
 	int (*pre_reset)(struct usb_interface *intf);
 	int (*post_reset)(struct usb_interface *intf);
 
+   /*
+    * 一个驱动可以支持多个设备，那么当发现一个设备时，如何知道哪个才是它的驱动？
+    * 这就是id_table的用处，让每一个usb_driver准备一张表，里面注明该驱动支持哪些设备。
+    */
 	const struct usb_device_id *id_table;
 
 	struct usb_dynids dynids;
@@ -946,6 +950,7 @@ extern int usb_register_driver(struct usb_driver *, struct module *,
 			       const char *);
 static inline int usb_register(struct usb_driver *driver)
 {
+   // 用来向USB核心层，即USB core注册一个USB设备驱动
 	return usb_register_driver(driver, THIS_MODULE, KBUILD_MODNAME);
 }
 extern void usb_deregister(struct usb_driver *);

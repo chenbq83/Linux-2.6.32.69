@@ -58,6 +58,14 @@ struct atomic_notifier_head {
 	struct notifier_block *head;
 };
 
+/*
+ * 通知链背后的实现机制其实很简单：
+ * 通过链表的形式，内核将那些注册进来的关注同类事件的节点构成一个链表。
+ * 当某一个特定的内核事件发生时，事件所属的内核组件负责遍历该链表上的所有节点
+ * 调用节点上的回调函数
+ *
+ * 所有通知链头部都是一个blocking_notifier_head类型的变量
+ */
 struct blocking_notifier_head {
 	struct rw_semaphore rwsem;
 	struct notifier_block *head;

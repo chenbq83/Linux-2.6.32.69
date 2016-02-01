@@ -18,6 +18,8 @@
 typedef __u32 __kernel_dev_t;
 
 typedef __kernel_fd_set		fd_set;
+// 设备号，32bit无符号整数
+// 其中，低20bit表示次设备号，高12bit表示主设备号
 typedef __kernel_dev_t		dev_t;
 typedef __kernel_ino_t		ino_t;
 typedef __kernel_mode_t		mode_t;

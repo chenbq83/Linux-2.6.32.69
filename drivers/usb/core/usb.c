@@ -21,6 +21,10 @@
  * are evil.
  */
 
+/* 
+ * USB最初的设计目标是替代串行、并行等各种低速总线，以一种单一类型的总线连接各种不同的设备。
+ * 几乎可以支持所有连接到PC的设备。
+ */
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/string.h>
@@ -1077,9 +1081,13 @@ static int __init usb_init(void)
 	if (retval)
 		goto out;
 
+   // 电源管理方面的。
+   // 如果在编译内核时没有打开电源管理，也就是没有定义CONFIG_PM，它就什么都不做。
 	retval = ksuspend_usb_init();
 	if (retval)
 		goto out;
+   // 注册USB总线
+   // 只有成功地注册USB总线子系统到系统中，我们才可以向这个总线添加USB设备
 	retval = bus_register(&usb_bus_type);
 	if (retval)
 		goto bus_register_failed;
@@ -1101,6 +1109,9 @@ static int __init usb_init(void)
 	retval = usb_hub_init();
 	if (retval)
 		goto hub_init_failed;
+   // 注册USB device driver
+   // 一个设备可以有多个接口，每个接口对应不同的驱动程序
+   // 这里device driver对应的是整个设备，而不是某个接口
 	retval = usb_register_device_driver(&usb_generic_driver, THIS_MODULE);
 	if (!retval)
 		goto out;
@@ -1145,6 +1156,9 @@ static void __exit usb_exit(void)
 	usb_debugfs_cleanup();
 }
 
+// 宏，类似module_init，
+// 因为这部分代码比较核心，开发人员把它看做一个子系统，而不仅仅是一个模块
+// drivers目录下面第一层的每个目录都算一个子系统，因为它们代表了一类设备
 subsys_initcall(usb_init);
 module_exit(usb_exit);
 MODULE_LICENSE("GPL");

@@ -194,6 +194,8 @@ __unregister_chrdev_region(unsigned major, unsigned baseminor, int minorct)
  */
 int register_chrdev_region(dev_t from, unsigned count, const char *name)
 {
+   // 将当期设备驱动程序要使用的设备号记录到chrdev数组中。
+   // 有了这个数组，系统就可以避免不同的设备驱动程序使用同一个设备号的情况出现。
 	struct char_device_struct *cd;
 	dev_t to = from + count;
 	dev_t n, next;
@@ -231,6 +233,7 @@ fail:
 int alloc_chrdev_region(dev_t *dev, unsigned baseminor, unsigned count,
 			const char *name)
 {
+   // 分配设备号
 	struct char_device_struct *cd;
 	cd = __register_chrdev_region(0, baseminor, count, name);
 	if (IS_ERR(cd))
@@ -479,8 +482,15 @@ static int exact_lock(dev_t dev, void *data)
  * cdev_add() adds the device represented by @p to the system, making it
  * live immediately.  A negative error code is returned on failure.
  */
+
+/*
+ * 对系统而言，当设备驱动程序成功调用了cdev_add之后，
+ * 就意味着一个字符设备对象已经加入到系统，只需要的时候，系统就可以找到它。
+ * 对用户态程序而言，cdev_add调用之后，就可以通过文件系统的接口呼叫到我们的驱动程序
+ */
 int cdev_add(struct cdev *p, dev_t dev, unsigned count)
 {
+   // 将字符设备对象p注册进系统
 	p->dev = dev;
 	p->count = count;
 	return kobj_map(cdev_map, dev, count, NULL, exact_match, exact_lock, p);
@@ -551,6 +561,7 @@ struct cdev *cdev_alloc(void)
  */
 void cdev_init(struct cdev *cdev, const struct file_operations *fops)
 {
+   // 初始化字符设备对象
 	memset(cdev, 0, sizeof *cdev);
 	INIT_LIST_HEAD(&cdev->list);
 	kobject_init(&cdev->kobj, &ktype_cdev_default);

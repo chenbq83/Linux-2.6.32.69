@@ -1487,6 +1487,15 @@ struct block_device_operations;
  * can be called without the big kernel lock held in all filesystems.
  */
 struct file_operations {
+   // 现实中字符设备驱动程序的编写，基本上都是围绕着如何实现这个结构体中的函数指针成员而展开的。
+   // 通过内核文件系统组件在其中的穿针引线，应用程序中对文件类函数的调用，比如read()，
+   // 将最终转接到对应函数指针的具体实现上。
+   //
+   // owner是当前内核模块对象的指针。
+   // 这个成员可以避免当file_operations中的函数正在被调用时，
+   // 其所属的模块被从系统中卸载掉。
+   // 如果一个设备驱动程序不是以模块的形式存在，而是被编译进内核，
+   // 那么它就是一个空指针，没有任何作用。
 	struct module *owner;
 	loff_t (*llseek) (struct file *, loff_t, int);
 	ssize_t (*read) (struct file *, char __user *, size_t, loff_t *);

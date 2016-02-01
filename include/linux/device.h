@@ -121,6 +121,7 @@ extern struct klist *bus_get_device_klist(struct bus_type *bus);
 
 struct device_driver {
 	const char		*name;
+   // 这个驱动属于哪个总线
 	struct bus_type		*bus;
 
 	struct module		*owner;
@@ -389,7 +390,9 @@ struct device {
 					 * its driver.
 					 */
 
+   // 这个设备连到了哪个总线上
 	struct bus_type	*bus;		/* type of bus device is on */
+   // 这个设备的驱动是什么
 	struct device_driver *driver;	/* which driver has allocated this
 					   device */
 	void		*platform_data;	/* Platform specific data, device

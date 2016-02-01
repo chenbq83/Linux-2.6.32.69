@@ -192,18 +192,24 @@ typedef struct elf64_sym {
 
 typedef struct elf32_hdr{
   unsigned char	e_ident[EI_NIDENT];
+  // 文件类型。对于驱动模块，这个值是1，是一个可定位的ELF文件
   Elf32_Half	e_type;
   Elf32_Half	e_machine;
   Elf32_Word	e_version;
   Elf32_Addr	e_entry;  /* Entry point */
   Elf32_Off	e_phoff;
+  // Section header table部分在文件中的偏移量
   Elf32_Off	e_shoff;
   Elf32_Word	e_flags;
   Elf32_Half	e_ehsize;
   Elf32_Half	e_phentsize;
   Elf32_Half	e_phnum;
+  // Section header table部分中每一个entry的大小
   Elf32_Half	e_shentsize;
+  // Section header table中有多少个entry
+  // 因此Section header table的大小就是e_shentsize * e_shnum个字节
   Elf32_Half	e_shnum;
+  // 与Section header entry中的sh_name一起用来指明对应的section的name
   Elf32_Half	e_shstrndx;
 } Elf32_Ehdr;
 

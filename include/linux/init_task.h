@@ -194,6 +194,11 @@ extern struct cred init_cred;
 	LIST_HEAD_INIT(cpu_timers[2]),					\
 }
 
+// __attribute__是什么？
+// 内核使用了大量的GNU C扩展，以至于GNU C成为能够编译内核的唯一编译器。
+// 这些扩展对代码优化、目标代码布局、安全检查等方面提供了很强的支持。
+// __attribute__主要被用来声明一些特殊的属性。
+// 这些属性被用来指示编译器进行特定方面的优化和更仔细的代码检查。
 /* Attach to the init_task data structure for proper alignment */
 #define __init_task_data __attribute__((__section__(".data.init_task")))
 

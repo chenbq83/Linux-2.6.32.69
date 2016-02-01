@@ -85,6 +85,11 @@ void trim_init_extable(struct module *m);
 extern const struct gtype##_id __mod_##gtype##_table		\
   __attribute__ ((unused, alias(__stringify(name))))
 
+/* 
+ * 结构体module在内核中代表了一个内核模块。
+ * 通过insmod，执行init_module系统调用，把模块插入到内核时，
+ * 模块便与一个struct module结构体相关联，并成为内核的一部分。
+ */
 extern struct module __this_module;
 #define THIS_MODULE (&__this_module)
 #else  /* !MODULE */
@@ -192,7 +197,31 @@ void *__symbol_get_gpl(const char *symbol);
 #define __CRC_SYMBOL(sym, sec)
 #endif
 
+/* 
+ * 对于静态编译链接而成的内核映像而言，所有的符号引用都在静态链接阶段完成。
+ * 但是，内核模块不可避免地要使用到内核提供的基础设施，
+ * 作为独立编译链接的内核模块，必须要解决这种静态链接无法完成的符号引用问题。
+ *
+ * 在内核模块所在的ELF文件中，这种引用被称为“未解决的引用”。
+ * 处理这个问题的本质是：在模块加载期间找到当前“未解决的引用”符号在内存中的实际目标地址！
+ *
+ * 内核和内核模块通过符号表的形式向外部世界导出符号的相关信息，
+ * 在代码层面就以EXPORT_SYMBOL的宏定义的形式存在。
+ */
+
 /* For every exported symbol, place a struct in the __ksymtab section */
+
+/*
+ * 第一个变量是一个简单的char数组，用来表示导出的符号名称。
+ * 这个变量被放置在__ksymtab_strings的section中
+ * 第二个变量是一个kernel_symbol结构体，用来表示一个内核符号的实例。
+ * 这个变量被放置在__ksymtab的section中
+ * 通过这个实例告诉外部世界，这个符号的信息：名称和地址
+ *
+ * 对这些section的使用需要经过一个中间环节，即链接脚本和链接器部分。
+ * 链接脚本告诉链接器把所有目标文件中“__ksymtab”的section放置在内核模块映像文件的“__ksymtab”的section中
+ */
+
 #define __EXPORT_SYMBOL(sym, sec)				\
 	extern typeof(sym) sym;					\
 	__CRC_SYMBOL(sym, sec)					\
@@ -226,15 +255,27 @@ void *__symbol_get_gpl(const char *symbol);
 
 enum module_state
 {
-	MODULE_STATE_LIVE,
-	MODULE_STATE_COMING,
-	MODULE_STATE_GOING,
+	MODULE_STATE_LIVE,   // 正常使用中
+	MODULE_STATE_COMING, // 正在被加载
+	MODULE_STATE_GOING,  // 正在被卸载
 };
+
+/*
+ * 使用工具insmod插入内核模块，实际上调用了init_module
+ * 在该系统调用函数中，首先调用load_module，
+ * 把用户空间传入的整个内核模块文件创建成一个内核模块，返回一个struct module结构体
+ * 内核中便以这个结构体代表这个内核模块。
+ */
 
 struct module
 {
 	enum module_state state;
 
+   /*
+    * 所有的内核模块都被维护在一个全局链表中，
+    * 链表头是一个全局变量struct module* modules
+    * 任何一个新创建的模块，都会被加入到这个链表的头部，通过modules->next即可引用到。
+    */
 	/* Member of list of modules */
 	struct list_head list;
 
@@ -248,11 +289,14 @@ struct module
 	const char *srcversion;
 	struct kobject *holders_dir;
 
+   // 内核模块导出的符号所在的起始地址
 	/* Exported symbols */
 	const struct kernel_symbol *syms;
+   // 内核模块导出符号的检验码所在的起始地址
 	const unsigned long *crcs;
 	unsigned int num_syms;
 
+   // 内核模块参数所在的起始地址
 	/* Kernel parameters. */
 	struct kernel_param *kp;
 	unsigned int num_kp;
@@ -283,6 +327,7 @@ struct module
 	unsigned int num_exentries;
 	struct exception_table_entry *extable;
 
+   // 指向内核模块初始化函数的指针，由module_init宏指定
 	/* Startup function. */
 	int (*init)(void);
 

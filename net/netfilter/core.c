@@ -214,11 +214,15 @@ EXPORT_SYMBOL(nf_hook_slow);
 
 int skb_make_writable(struct sk_buff *skb, unsigned int writable_len)
 {
+   // 检查要写入的缓冲区大小是否大于数据包长度，防止溢出
 	if (writable_len > skb->len)
 		return 0;
 
+   // 数据包属于共享或者克隆的，数据内部部分是被多个skb包共享的，
+   // 需要拷贝出一个新的skb包
 	/* Not exclusive use of packet?  Must copy. */
 	if (!skb_cloned(skb)) {
+      // 如果是独享的包，不需要克隆
 		if (writable_len <= skb_headlen(skb))
 			return 1;
 	} else if (skb_clone_writable(skb, writable_len))

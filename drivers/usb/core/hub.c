@@ -57,6 +57,9 @@ struct usb_hub {
 	int			error;		/* last reported error */
 	int			nerrors;	/* track consecutive errors */
 
+   // 每一个hub都有它自己的一个事件列表
+   // Hub可以有一个或者多个，而hub驱动只需要一个，或者说khubd这个内核线程永远都只有一个。
+   // 不管实际上有多少个hub，最终都会将其event_list挂入到全局链表hub_event_list中来统一处理。
 	struct list_head	event_list;	/* hubs w/data or errs ready */
 	unsigned long		event_bits[1];	/* status change bitmask */
 	unsigned long		change_bits[1];	/* ports with logical connect
@@ -91,6 +94,9 @@ static DEFINE_SPINLOCK(device_state_lock);
 
 /* khubd's worklist and its lock */
 static DEFINE_SPINLOCK(hub_event_lock);
+
+// 这个链表对于整个USB系统来说是全局的，
+// 但是对于整个内核来说当然是局部的，比较它前面有个static
 static LIST_HEAD(hub_event_list);	/* List of hubs needing servicing */
 
 /* Wakes up khubd */
@@ -1229,12 +1235,17 @@ static int hub_probe(struct usb_interface *intf, const struct usb_device_id *id)
 	}
 
 #ifdef	CONFIG_USB_OTG_BLACKLIST_HUB
+   // OTG: On The Go
+   // 随着USB传输协议的诞生，人们不再满足于以前那种一个设备要么就是主设备（host），要么就是从设备的现状（slave），
+   // 后来公布了USB OTG规范，于是出现了OTG设备，既可以当host，也能当slave的设备
 	if (hdev->parent) {
 		dev_warn(&intf->dev, "ignoring external hub\n");
 		return -ENODEV;
 	}
 #endif
 
+   // 每一个USB设备属于哪个类，以及哪个子类都是定好的，
+   // Hub的子类就是0，也可能是1
 	/* Some hubs have a subclass of 1, which AFAICT according to the */
 	/*  specs is not defined, but it works */
 	if ((desc->desc.bInterfaceSubClass != 0) &&
@@ -1244,6 +1255,9 @@ descriptor_error:
 		return -EIO;
 	}
 
+   // 判断这个hub有几个端点
+   // spec规定了hub只有一个端点（除去端点0）也就是中断端点，
+   // 因为hub的传输都是中断传输
 	/* Multiple endpoints? What kind of mutant ninja-hub is this? */
 	if (desc->desc.bNumEndpoints != 1)
 		goto descriptor_error;
@@ -1257,6 +1271,8 @@ descriptor_error:
 	/* We found a hub */
 	dev_info (&intf->dev, "USB hub found\n");
 
+   // 申请hub的数据结构struct usb_hub
+   // kzalloc()是kmalloc+memset，所以申请的元素都被初始化为0
 	hub = kzalloc(sizeof(*hub), GFP_KERNEL);
 	if (!hub) {
 		dev_dbg (&intf->dev, "couldn't kmalloc hub struct\n");
@@ -1265,7 +1281,10 @@ descriptor_error:
 
 	kref_init(&hub->kref);
 	INIT_LIST_HEAD(&hub->event_list);
+   // 不管是USB设备也好，PCI设备也好，SCSI设备也好，内核中都为你准备了一个struct device结构体来描述
+   // intfdev就是和hub相关联的struct device指针
 	hub->intfdev = &intf->dev;
+   // 不管是Hub也好，U盘也好，USB鼠标也好，USB core都准备一个struct usb_device来描述
 	hub->hdev = hdev;
 	INIT_DELAYED_WORK(&hub->leds, led_work);
 	INIT_DELAYED_WORK(&hub->init_work, NULL);
@@ -3245,6 +3264,9 @@ static void hub_events(void)
 	int i, ret;
 	int connect_change;
 
+   // 对于hub来说，当插入一个设备到hub口里，就会触发一个事件。
+   // 而第一个事件的发生其实是hub驱动程序本身的初始化。
+   // 由于root hub的存在，所以hub_probe必然会被调用。
 	/*
 	 *  We restart the list every time to avoid a deadlock with
 	 * deleting hubs downstream from this one. This should be
@@ -3253,16 +3275,22 @@ static void hub_events(void)
 	 */
 	while (1) {
 
+      // 锁定event自旋锁
 		/* Grab the first entry at the beginning of the list */
 		spin_lock_irq(&hub_event_lock);
 		if (list_empty(&hub_event_list)) {
+         // 如果链表为空，没有event需要处理
+         // 释放锁，继续等待
 			spin_unlock_irq(&hub_event_lock);
 			break;
 		}
 
+      // 从全局链表hub_event_list中取出一个event，
+      // 并且把它从链表中删掉并且初始化
 		tmp = hub_event_list.next;
 		list_del_init(tmp);
 
+      // 从struct list_head event_list得到它所对应的struct usb_hub结构体变量
 		hub = list_entry(tmp, struct usb_hub, event_list);
 		kref_get(&hub->kref);
 		spin_unlock_irq(&hub_event_lock);
@@ -3459,7 +3487,12 @@ static int hub_thread(void *__unused)
 	set_freezable();
 
 	do {
+      // 不断地从链表hub_event_list取出event，处理
 		hub_events();
+      // 等待hub总线上面的事件，如果一直没有事件则函数不返回。
+      // 这里是：
+      // 等待khubd_wait队列，满足以下条件：
+      // 1. hub_event_list链表非空；或者2. 内核线程应该停止了
 		wait_event_freezable(khubd_wait,
 				!list_empty(&hub_event_list) ||
 				kthread_should_stop());
@@ -3481,6 +3514,11 @@ MODULE_DEVICE_TABLE (usb, hub_id_table);
 
 static struct usb_driver hub_driver = {
 	.name =		"hub",
+   // 最重要的函数。
+   // 每个USB设备的驱动都有一个probe函数，比如U盘的函数就是storage_probe()
+   // 不过storage_probe被调用需要两个前提：
+   // 1. usb_storage被加载了；
+   // 2. U盘等设备插入了被检测到了。
 	.probe =	hub_probe,
 	.disconnect =	hub_disconnect,
 	.suspend =	hub_suspend,
@@ -3501,10 +3539,20 @@ int usb_hub_init(void)
 		return -1;
 	}
 
+   // 记录进程的数据结构。
+   // 每一个进程都用一个struct task_struct的结构体变量来表示。
+   // 这里是记录下创建好的内核线程，以便日后要卸载模块时可以用另一个函数来结束这个内核线程
+
+   // kthread_run()的三个参数：
+   // 1. hub_thread()内核线程执行的函数；
+   // 2. hub_thread()的参数，NULL
+   // 3. 精灵进程的名字，ps -el看到的名字
 	khubd_task = kthread_run(hub_thread, NULL, "khubd");
+   // 判断指针是否有效，而不是仅仅判断指针是否为空。
 	if (!IS_ERR(khubd_task))
 		return 0;
 
+   // 指针无效，内核线程没有成功创建
 	/* Fall through if kernel_thread failed */
 	usb_deregister(&hub_driver);
 	printk(KERN_ERR "%s: can't start khubd\n", usbcore_name);

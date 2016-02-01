@@ -40,6 +40,14 @@
 
 /* These are for everybody (although not all archs will actually
    discard it in modules) */
+
+// __init对内核来说就是一种暗示，表明被它标记的函数仅在初始化期间使用。
+// 在模块被装载之后，它占用的资源就会被释放掉。
+
+// __session可以让编译器将函数或变量放在指定的节中。
+// 通过代码放在.text节，变量放在.data或者.bss节。
+// 这里如果指定了.init.text，那么使用__init修饰的代码就会编译到.init.text节。
+// 初始化结束之后就可以释放掉这部分内存。
 #define __init		__section(.init.text) __cold notrace
 #define __initdata	__section(.init.data)
 #define __initconst	__section(.init.rodata)
@@ -165,6 +173,19 @@ extern void (*late_time_init)(void);
  * can point at the same handler without causing duplicate-symbol build errors.
  */
 
+// ------------------
+// 可执行文件与链接器
+// ------------------
+// 内核可执行文件由许多链接在一起的对象文件组成。
+// 对象文件有许多节，如文本、数据、init数据等等。
+// 这些对象文件都由一个成为链接器脚本的文件链接并装入的。
+// 这个链接器脚本的功能是将输入对象文件的各节映射到输出文件中，
+// 换句话说，它将所有输入对象的文件都链接到单一的可执行文件中，
+// 将该可执行文件的各节装入到指定地址处。
+// vmlinux.lds是存在arch/<target>/目录中的内核链接器脚本。
+// 它负责链接内核的各个节并将它们装入内存中特定的偏移量处。
+
+// 将指定的函数指针fn放到了initcallXX.init节里
 #define __define_initcall(level,fn,id) \
 	static initcall_t __initcall_##fn##id __used \
 	__attribute__((__section__(".initcall" level ".init"))) = fn
