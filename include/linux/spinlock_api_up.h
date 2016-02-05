@@ -24,6 +24,14 @@
  * flags straight, to suppress compiler warnings of unused lock
  * variables, and to add the proper checker annotations:
  */
+
+/*
+ * UP (Uni-Processor) 系统只有一个处理器单元，即单核CPU系统
+ * SMP (Symmetric Multi-Processors) 系统有多个处理器单元。各个处理器之间共享总线，内存等等
+ * 在操作系统看来，各个处理器之间没有区别
+ */
+
+// 单核处理器自旋锁实现，
 #define __LOCK(lock) \
   do { preempt_disable(); __acquire(lock); (void)(lock); } while (0)
 
@@ -48,6 +56,7 @@
 #define __UNLOCK_IRQRESTORE(lock, flags) \
   do { local_irq_restore(flags); __UNLOCK(lock); } while (0)
 
+// 单核CPU系统的自旋锁
 #define _spin_lock(lock)			__LOCK(lock)
 #define _spin_lock_nested(lock, subclass)	__LOCK(lock)
 #define _read_lock(lock)			__LOCK(lock)

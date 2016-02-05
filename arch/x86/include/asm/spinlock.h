@@ -58,6 +58,32 @@
 #if (NR_CPUS < 256)
 #define TICKET_SHIFT 8
 
+/*
+ * http://blog.sina.com.cn/s/blog_6d7fa49b01014q7p.html
+ *
+ * x86 SMP自旋锁的实现：
+ * xaddw表示先交换源操作数和目的操作数的数值，然后两个操作数想加，结果保存在目的寄存器中
+ * 这里的目的寄存器是%1，也就是lock->slock变量
+ *
+ * 详细过程：
+ * 首先，交换slock和inc的值，即slock=0x0100，inc=0x0000
+ * 然后，将两者相加并保存到slock中，得到slock=0x0100，inc=0x0000
+ * 判断inc的高字节和低字节，H=0x00，L=0x00
+ * 二者相等，表示成功申请到自旋锁
+ *
+ * 如果另一个进行在申请这一把自旋锁，执行spin_lock()
+ * 得到inc=0x0100，因为自旋锁已经被另一个进行获得了，此时slock=0x0100
+ * 重复上述的过程，得到slock=0x0200，inc=0x0100，inc的高八位和低八位不相等
+ * 表示拿不到锁。
+ * 然后将slock(0x0200)的低八位赋值给inc的低八位，即H=0x01，L=0x00，依旧不相等，所以一直在自旋
+ *
+ * 等到另一个进程释放自旋锁，然后slock的低八位加1，即slock=0x0201
+ * 那么在自旋的过程中得到H=0x01，L=0x01，相等表示获得锁
+ *
+ * 下面的rep ; nop是一个混合指令，被翻译成pause指令。
+ * 它向处理器提供一种提示：告诉处理器所执行的代码序列是一个自旋等待状态，
+ * 处理器会根据这个提示而避开内存序列冲突
+ */
 static __always_inline void __ticket_spin_lock(raw_spinlock_t *lock)
 {
 	short inc = 0x0100;
@@ -65,12 +91,12 @@ static __always_inline void __ticket_spin_lock(raw_spinlock_t *lock)
 	asm volatile (
 		LOCK_PREFIX "xaddw %w0, %1\n"
 		"1:\t"
-		"cmpb %h0, %b0\n\t"
-		"je 2f\n\t"
-		"rep ; nop\n\t"
-		"movb %1, %b0\n\t"
+		"cmpb %h0, %b0\n\t"      // 比较inc的高八位和低八位
+		"je 2f\n\t"              // 如果相等，表示获得锁
+		"rep ; nop\n\t"          // 混合指令，被翻译成pause指令。
+		"movb %1, %b0\n\t"       // 将slock的低八位赋给inc的低八位
 		/* don't need lfence here, because loads are in-order */
-		"jmp 1b\n"
+		"jmp 1b\n"               // 调整到上面继续比较inc的高八位和低八位
 		"2:"
 		: "+Q" (inc), "+m" (lock->slock)
 		:

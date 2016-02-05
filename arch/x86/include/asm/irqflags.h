@@ -107,6 +107,7 @@ static inline void halt(void)
  */
 static inline unsigned long __raw_local_irq_save(void)
 {
+   // 先取出flags，然后关闭本地处理器的中断响应
 	unsigned long flags = __raw_local_save_flags();
 
 	raw_local_irq_disable();

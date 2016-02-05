@@ -233,9 +233,9 @@ static inline int __write_trylock(rwlock_t *lock)
 
 static inline void __read_lock(rwlock_t *lock)
 {
-	preempt_disable();
-	rwlock_acquire_read(&lock->dep_map, 0, 0, _RET_IP_);
-	LOCK_CONTENDED(lock, _raw_read_trylock, _raw_read_lock);
+	preempt_disable();                                        // 关闭内核抢占
+	rwlock_acquire_read(&lock->dep_map, 0, 0, _RET_IP_);      // 用于自旋锁调试
+	LOCK_CONTENDED(lock, _raw_read_trylock, _raw_read_lock);  // 相当于调用_raw_read_lock(lock);
 }
 
 static inline unsigned long __spin_lock_irqsave(spinlock_t *lock)
@@ -253,6 +253,7 @@ static inline unsigned long __spin_lock_irqsave(spinlock_t *lock)
 #ifdef CONFIG_LOCKDEP
 	LOCK_CONTENDED(lock, _raw_spin_trylock, _raw_spin_lock);
 #else
+   // SMP的情况下，最终调用 __ticket_spin_lock
 	_raw_spin_lock_flags(lock, &flags);
 #endif
 	return flags;

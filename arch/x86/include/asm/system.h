@@ -357,6 +357,23 @@ void stop_this_cpu(void *dummy);
  * Some non-Intel clones support out of order store. wmb() ceases to be a
  * nop for these.
  */
+
+/*
+ * barrier()函数主要针对编译器的优化屏障，但是它不能阻止CPU重排指令时序。
+ * 所以仅仅一个barrier函数还不够，内核还提供了以下几种机制。
+ * 值得一提的是，使用了这些内存屏障，相当于停用了处理器或编译器提供的优化机制，
+ * 结果是比如影响到程序的性能
+ *
+ * lock指令是一种前缀，它可与其他指令联合，用来维持总线的锁存信号直到其联合的指令执行完为止
+ * 当CPU与其他处理器协同工作时，该指令可避免破坏有用的信息。
+ * 它对中断没有任何影响，因为中断只能在指令之间产生
+ * lock前缀的真正作用是保持对总线的控制权，直到整条指令执行完毕
+ *
+ * lfence指令：停止相关流水线，直到lfence之前对内存进行读取操作的指令全部完成
+ * sfence指令：停止相关流水线，直到sfence之前对内存进行写入操作的指令全部完成
+ * mfence指令：停止相关流水线，直到mfence之前对内存进行读取和写入操作的指令全部完成
+ */
+
 #define mb() alternative("lock; addl $0,0(%%esp)", "mfence", X86_FEATURE_XMM2)
 #define rmb() alternative("lock; addl $0,0(%%esp)", "lfence", X86_FEATURE_XMM2)
 #define wmb() alternative("lock; addl $0,0(%%esp)", "sfence", X86_FEATURE_XMM)

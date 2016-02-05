@@ -222,6 +222,9 @@ struct netdev_hw_addr {
 	struct rcu_head		rcu_head;
 };
 
+// 网络设备硬件地址链表。
+// net_device对象通过list成员将隶属于当前网络设备的硬件地址加到一个链表中
+// count表示链表中的个数
 struct netdev_hw_addr_list {
 	struct list_head	list;
 	int			count;
@@ -584,6 +587,11 @@ struct net_device_ops {
 	void			(*ndo_uninit)(struct net_device *dev);
 	int			(*ndo_open)(struct net_device *dev);
 	int			(*ndo_stop)(struct net_device *dev);
+   // 数据包的发送函数
+   // 参数skb的类型sk_buff是网络设备驱动程序的一个重要的数据结构，通常叫套接字缓冲区
+   // 待发送的数据包的数据就包含在skb参数中
+   // skb->data指向要发送的数据包在内存中的位置，skb->len则是以字节为单位的数据包的长度
+   // 参数dev是本次用来发送网络数据包的设备对象
 	netdev_tx_t		(*ndo_start_xmit) (struct sk_buff *skb,
 						   struct net_device *dev);
 	u16			(*ndo_select_queue)(struct net_device *dev,
@@ -657,6 +665,9 @@ struct net_device
 	 * the interface.
 	 */
    // 网络设备的名称。
+   // 在linux内核中，设备名称字符串末尾的数字用来表示同一网络设备类型的多个适配器
+   // ethX：以太网设备
+   // lo：回环设备loopback，用于本地计算机通信
 	char			name[IFNAMSIZ];
 	/* device name hash chain */
 	struct hlist_node	name_hlist;
@@ -683,6 +694,8 @@ struct net_device
 	unsigned long		state;
 
 	struct list_head	dev_list;
+   // 用于支持NAPI特性的网络设备
+   // 它将napi_struct对象的dev_list加到napi_list所对应的链表中
 	struct list_head	napi_list;
 
 	/* Net device features */
@@ -765,8 +778,12 @@ struct net_device
 	unsigned char		operstate; /* RFC2863 operstate */
 	unsigned char		link_mode; /* mapping policy to operstate */
 
+   // 网络访问层的最大传输单元MTU，是针对上一次的payload
+   // 对于以太网设备，该值为1500
 	unsigned		mtu;	/* interface MTU value		*/
 	unsigned short		type;	/* interface hardware type	*/
+   // 当前网络设备所处理的网络访问层的硬件协议头的长度
+   // 对于以太网设备，14个字节
 	unsigned short		hard_header_len;	/* hardware hdr length	*/
 
 	/* extra head- and tailroom the hardware may need, but not in all cases
@@ -782,9 +799,14 @@ struct net_device
 
 	/* Interface address info. */
 	unsigned char		perm_addr[MAX_ADDR_LEN]; /* permanent hw address */
+   // 网络访问层硬件地址长度。
+   // 对于以太网设备，6个字节（MAC地址）
+   // // 网络访问层硬件地址长度。
+   // 对于以太网设备，6个字节（MAC地址）
 	unsigned char		addr_len;	/* hardware address length	*/
 	unsigned short          dev_id;		/* for shared network cards */
 
+   // 网络设备的单播unicast MAC地址列表
 	struct netdev_hw_addr_list	uc;	/* Secondary unicast
 						   mac addresses */
 	int			uc_promisc;
