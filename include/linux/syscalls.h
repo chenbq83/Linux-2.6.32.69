@@ -258,6 +258,16 @@ static void prof_sysexit_disable_##sname(void)				       \
 #define SYSCALL_DEFINE0(name)	   asmlinkage long sys_##name(void)
 #endif
 
+/*
+ * http://blog.csdn.net/hazir/article/details/11835025
+ *
+ * 反斜杠\：当宏定义过长需要换行时，在行尾要加上换行标志\
+ * ...：省略号代表可变部分，下面_VA_ARGS__代表省略的变成部分
+ * ##：分隔连接方式，它的作用是先分隔，然后进行强制连接，例如
+ * #define VAR(type, name) type name##_##type
+ * VAR(int, var1);
+ * 展开之后就是：int var1_int;
+ */
 #define SYSCALL_DEFINE1(name, ...) SYSCALL_DEFINEx(1, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE2(name, ...) SYSCALL_DEFINEx(2, _##name, __VA_ARGS__)
 #define SYSCALL_DEFINE3(name, ...) SYSCALL_DEFINEx(3, _##name, __VA_ARGS__)

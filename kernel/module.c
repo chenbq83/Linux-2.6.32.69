@@ -225,6 +225,9 @@ static bool each_symbol_in_section(const struct symsearch *arr,
 bool each_symbol(bool (*fn)(const struct symsearch *arr, struct module *owner,
 			    unsigned int symnum, void *data), void *data)
 {
+   // 这个函数分成两个部分：
+   // 1. 在内核导出的符号表中查找对应的符号，如果找到，通过fsa返回该符号的信息。
+   // 2. 在系统中已加载的模块（以链表形式保存在全局变量modules中）的导出符号表中查找对应的符号
 	struct module *mod;
 	const struct symsearch arr[] = {
 		{ __start___ksymtab, __stop___ksymtab, __start___kcrctab,
@@ -1636,6 +1639,10 @@ static int simplify_symbols(Elf_Shdr *sechdrs,
 			    unsigned int pcpuindex,
 			    struct module *mod)
 {
+   /*
+    * 在加载模块的过程中，这个函数用来为当前正在加载的模块中所有的“未解决的引用”符号
+    * 产生正确的目标地址。
+    */
 	Elf_Sym *sym = (void *)sechdrs[symindex].sh_addr;
 	unsigned long secbase;
 	unsigned int i, n = sechdrs[symindex].sh_size / sizeof(Elf_Sym);
@@ -2194,6 +2201,11 @@ static noinline struct module *load_module(void __user *umod,
 #endif
 	}
 
+   /*
+    * 模块的构造工具链安插了一个".gnu.linkonce.this_module" section在模块ELF文件中
+    * 并初始化了其中一些成员。
+    * 在模块加载过程中，load_module函数将利用这个section中的数据来初始化mod变量
+    */
 	modindex = find_sec(hdr, sechdrs, secstrings,
 			    ".gnu.linkonce.this_module");
 	if (!modindex) {
@@ -2201,6 +2213,10 @@ static noinline struct module *load_module(void __user *umod,
 		err = -ENOEXEC;
 		goto free_hdr;
 	}
+
+   // 在第一次改写的HDR视图的基础上，
+   // mod指针指向了实际的struct module所在的内存地址
+
 	/* This is temporary: point mod into copy of data. */
 	mod = (void *)sechdrs[modindex].sh_addr;
 
@@ -2285,6 +2301,14 @@ static noinline struct module *load_module(void __user *umod,
 		mod->percpu = percpu;
 	}
 
+   /*
+    * HDR视图中绝大多数的section会被搬移到新的内存空间中，
+    * 之后会根据这些section新的内存地址再次改写HDR视图。
+    *
+    * 在为了需要移动的section分配新的内存空间地址之前，
+    * 内核需要决定出HDR视图中哪些section需要移动，需要移动到哪里。
+    * layout_sections就是来做这个事情的。
+    */
 	/* Determine total sizes, and put offsets in sh_entsize.  For now
 	   this is done generically; there doesn't appear to be any
 	   special cases for the architectures. */

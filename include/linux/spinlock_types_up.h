@@ -22,6 +22,11 @@ typedef struct {
 
 #else
 
+// 在单核处理器中，这个结构是个空结构体！
+// 为什么？
+// 因为自旋锁的思想就是在SMP环境中，保护共享的数据结构
+// 也就是在CPU-A访问共享数据的期间，其他CPU不能访问同样的数据
+// 单CPU的情况下，关闭中断就达到了独占的目的了
 typedef struct { } raw_spinlock_t;
 
 #define __RAW_SPIN_LOCK_UNLOCKED { }

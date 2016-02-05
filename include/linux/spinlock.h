@@ -25,7 +25,7 @@
  *  linux/spinlock.h:     builds the final spin_*() APIs.
  *
  * on UP builds:
- *
+ *  // 对于单核CPU，自旋锁的结构体其实退化成一个空的结构
  *  linux/spinlock_type_up.h:
  *                        contains the generic, simplified UP spinlock type.
  *                        (which is an empty structure on non-debug builds)

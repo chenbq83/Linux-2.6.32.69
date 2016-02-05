@@ -56,10 +56,18 @@
 
 #include <asm/irqflags.h>
 
+// 在单处理器不可抢占系统中，
+// 使用local_irq_enable与local_irq_disable是消除异步并发源的有效方式
+
+// 用来打开本地处理器的中断
 #define local_irq_enable() \
 	do { trace_hardirqs_on(); raw_local_irq_enable(); } while (0)
+// 关闭本地处理器的中断
 #define local_irq_disable() \
 	do { raw_local_irq_disable(); trace_hardirqs_off(); } while (0)
+// 关闭中断之前，将处理器当前的标志位保存在一个unsighed long flags中
+// 调用local_irq_restore的时候，再回复到处理器的FLAGS寄存器中。
+// 防止了在一个中断闭关的环境中因为local_irq_disable和local_irq_enable将之前的中断响应状态破坏掉
 #define local_irq_save(flags)				\
 	do {						\
 		typecheck(unsigned long, flags);	\

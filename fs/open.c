@@ -1030,21 +1030,31 @@ EXPORT_SYMBOL(fd_install);
 
 long do_sys_open(int dfd, const char __user *filename, int flags, int mode)
 {
+   // 获取文件名称
+   // 首先创建存取文件名称的空间，然后从用户空间把文件名拷贝过来
 	char *tmp = getname(filename);
 	int fd = PTR_ERR(tmp);
 
 	if (!IS_ERR(tmp)) {
+      // 为本次的open操作分配一个未使用过的文件描述符
+      // 实际上这是一个封装了alloc_fd的宏
+      // alloc_fd()函数从fd_table中获取一个可用fd并做些简单初始化
 		fd = get_unused_fd_flags(flags);
 		if (fd >= 0) {
+         // 成功获取fd，开始打开文件
 			struct file *f = do_filp_open(dfd, tmp, flags, mode, 0);
 			if (IS_ERR(f)) {
+            // 打开失败，释放fd
 				put_unused_fd(fd);
 				fd = PTR_ERR(f);
 			} else {
+            // 文件以及被打开了
 				fsnotify_open(f->f_path.dentry);
+            // 将文件指针安装在fd数组中
 				fd_install(fd, f);
 			}
 		}
+      // 释放放置从用户空间拷贝过来的文件名的存储空间
 		putname(tmp);
 	}
 	return fd;

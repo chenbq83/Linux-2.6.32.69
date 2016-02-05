@@ -5,6 +5,7 @@
 # error "please don't include this file directly"
 #endif
 
+// 在多核x86中就是一个unsigned int的变量
 typedef struct raw_spinlock {
 	unsigned int slock;
 } raw_spinlock_t;

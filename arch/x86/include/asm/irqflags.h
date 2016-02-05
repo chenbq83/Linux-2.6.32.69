@@ -39,6 +39,8 @@ static inline void native_irq_disable(void)
 	asm volatile("cli": : :"memory");
 }
 
+// 在x86平台上，最终利用sti和cli指令来分别设置和清除x86处理器中的FLAGS寄存器的IF标志
+// 这样处理器就可以响应或者不响应外部的中断
 static inline void native_irq_enable(void)
 {
 	asm volatile("sti": : :"memory");
@@ -71,6 +73,7 @@ static inline void raw_local_irq_restore(unsigned long flags)
 	native_restore_fl(flags);
 }
 
+// 关闭本地处理器对中断的响应
 static inline void raw_local_irq_disable(void)
 {
 	native_irq_disable();

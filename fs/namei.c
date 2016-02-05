@@ -1714,8 +1714,10 @@ struct file *do_filp_open(int dfd, const char *pathname,
 	struct dentry *dir;
 	int count = 0;
 	int will_write;
+   // 改变参数flga的值，具体做法是flag+1
 	int flag = open_to_namei_flags(open_flag);
 
+   // 设置访问权限
 	if (!acc_mode)
 		acc_mode = MAY_OPEN | ACC_MODE(flag);
 
@@ -1742,6 +1744,8 @@ struct file *do_filp_open(int dfd, const char *pathname,
 	/*
 	 * Create - we need to know the parent.
 	 */
+   // path_init为查找做准备工作，path_walk真正上路查找
+   // 这两个函数联合起来根据一段路径名找到对应的dentry
 	error = path_init(dfd, pathname, LOOKUP_PARENT, &nd);
 	if (error)
 		return ERR_PTR(error);
