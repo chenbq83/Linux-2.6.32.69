@@ -488,6 +488,8 @@ void netdev_unregister_kobject(struct net_device * net)
 	device_del(dev);
 }
 
+// 网络设备内嵌的dev成员作为一个内核对象被加到了系统中，
+// 并通过sysfs文件系统向用户空间披露了它的存在
 /* Create sysfs entries for network device. */
 int netdev_register_kobject(struct net_device *net)
 {

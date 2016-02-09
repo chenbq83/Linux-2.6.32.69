@@ -41,8 +41,64 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 #endif	/* CC_STACKPROTECTOR */
 
 /*
+ * http://www.docin.com/p-832688018.html
+ *
  * Saving eflags is important. It switches not only IOPL between tasks,
  * it also protects other tasks from NT leaking through sysenter etc.
+ */
+
+/*
+ * switch_to切换主要有以下三部分：
+ * 1. 进程切换，即esp的切换 （从esp可以找到进程的描述符）
+ * 2. 硬件上下文的切换，调用__switch_to
+ * 3. 堆栈的切换，即ebp的切换 （ebp是栈底指针，它确定了当前变量空间属于哪个进程）
+ *
+ * 详细步骤：
+ * step 1： 复制两个变量到寄存器
+ *   [prev] "a" (prev)
+ *   [next] "d" (next)
+ *   即：
+ *   eax <== prev_A or eax <== %p(%ebp_A)
+ *   edx <== next_A or edx <== %n(%ebp_A)
+ *   这里prev和next都是A进程的局部变量
+ *
+ * step 2：保存A进程的ebp和eflags
+ *   pushfl
+ *   pushl %ebp
+ *   注意：因为现在esp还在A的堆栈中，所以这两个东西被保存到进程A的内核堆栈中。
+ *
+ * step 3：保存当前esp到进程A的内核描述符中
+ *   movl %%esp,%[prev_sp]\n\t
+ *   它可以表示成 prev_A->thread.sp <== esp_A
+ *   在调用switch_to时，prev是指向进程A自己的进程描述符的
+ *
+ * step 4：从next（B进程）的描述符中取出之前从B被切换时保存的esp_B
+ *   movl %[next_sp],%%esp\n\t
+ *   它可以表示成 exp_B <== next_A->thread.sp
+ *   注意：在A进程中的next是指向B的进程描述符的。
+ *   从这个时候开始，CPU当前执行的进程以及是B进程了，因为esp已经指向了B的内核堆栈。
+ *   但是，现在的ebp仍然指向A进程的内核堆栈，所以所有局部变量仍然是A中的局部变量，
+ *   比如next实质上是%n(%ebp_A)，也就是next_A，即指向B的进程描述符。
+ *
+ * step 5：把标号为1的指令地址保存到A进程描述符的ip域
+ *   movl %1f,%[prev_ip\n\t
+ *   它可以表示成 prev_A->thread.ip <== %1f
+ *   当A进程下次被switch_to回来的时候，会从这条指令开始执行。
+ *
+ * step 6：将返回地址保存到堆栈，然后调用__switch_to函数，完成硬件上下文切换
+ *   pushl %[next_ip]\n\t
+ *   jmp __switch_to\n
+ *   这里，如果之前B被switch_to出去过，那么[next_ip]里存的就是下面这个if的标号，
+ *   但是如果B进程刚刚被创建，之前没有被切换出去过，那么[next_ip]里存的将是ret_from_fork（参考copy_thread）
+ *   这就是为什么不用call __switch_to而是用jmp __switch_to
+ *   因为call会导致自动把下面这句话的地址（也就是1:）压栈，然后__switch_to就比如只能ret到这里，
+ *   而无法根据需要ret到ret_from_fork。
+ *   
+ * step 7：从__switch_to返回后继续从1:标号后面开始执行，修改ebp到B的内核堆栈，回复B的eflags
+ *   popl %%ebp\n\t
+ *   popfl\n
+ *   如果从__switch_to返回后从这里继续运行，那么说明在此之前B肯定被switch_to调出去过，
+ *   因此此前肯定备份了ebp_B和flags_B，这里执行回复操作。
  */
 #define switch_to(prev, next, last)					\
 do {									\

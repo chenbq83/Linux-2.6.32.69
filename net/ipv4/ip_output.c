@@ -320,11 +320,14 @@ int ip_queue_xmit(struct sk_buff *skb, int ipfragok)
 	/* Skip all of this if the packet is already routed,
 	 * f.e. by something like SCTP.
 	 */
+   // 检查skb->rtable是否为空，不为空则说明已经指定了路由，跳到packet_routed继续执行
+   // SCTP是什么？根据上面的注释，它应该提前指定了路由
 	rcu_read_lock();
 	rt = skb_rtable(skb);
 	if (rt != NULL)
 		goto packet_routed;
 
+   // 检测socket路由合法性，如果不合法需要重新查找路由
 	/* Make sure we can route this packet. */
 	rt = (struct rtable *)__sk_dst_check(sk, 0);
 	inet_opt = rcu_dereference(inet->inet_opt);
@@ -362,29 +365,48 @@ int ip_queue_xmit(struct sk_buff *skb, int ipfragok)
 	skb_dst_set(skb, dst_clone(&rt->u.dst));
 
 packet_routed:
+   // 如果sk_buff指向的sock的opt中包含严格源站路由选项
+   // 而刚刚查找到的路由项目标地址又不等于网关地址的话
+   // 说明严格源站路由无法满足
 	if (inet_opt && inet_opt->opt.is_strictroute && rt->rt_dst != rt->rt_gateway)
 		goto no_route;
 
+   // OK, 我们找到了合法的路由，准备发送数据包了
+   // 在skb的数据中预留出IP首部包括选项的空间给IP报头，
+   // 并将skb->network_header指向它
 	/* OK, we know where to send it, allocate and build IP header. */
 	skb_push(skb, sizeof(struct iphdr) + (inet_opt ? inet_opt->opt.optlen : 0));
 	skb_reset_network_header(skb);
 	iph = ip_hdr(skb);
+   // 在IP首部填入版本号4，IP首部长度5（20字节），这个值在后面会根据选项的长度增加
 	*((__be16 *)iph) = htons((4 << 12) | (5 << 8) | (inet->tos & 0xff));
+   // 如果socket要求IP不分片
+   // 这是通过检查sock->pmtudisc做到的。如果使用路径MTU发现则说明要求不分片，否则允许分片
+   // 并且参数ipfragok等于0，
+   // 那么将DF标志置1，否则清0
 	if (ip_dont_fragment(sk, &rt->u.dst) && !ipfragok)
 		iph->frag_off = htons(IP_DF);
 	else
 		iph->frag_off = 0;
+   // 设置IP首部的ttl（从sock的uc_ttl获得，如果小于0则从路由项的metrics获得）
+   // protocol（从sock->sk_protocol）
+   // 源地址、目标地址（都从路由项获得）
 	iph->ttl      = ip_select_ttl(inet, &rt->u.dst);
 	iph->protocol = sk->sk_protocol;
 	iph->saddr    = rt->rt_src;
 	iph->daddr    = rt->rt_dst;
 	/* Transport layer set skb->h.foo itself. */
 
+   // 若opt不为空，在IP首部中加上选项长度
 	if (inet_opt && inet_opt->opt.optlen) {
 		iph->ihl += inet_opt->opt.optlen >> 2;
 		ip_options_build(skb, &inet_opt->opt, inet->daddr, rt, 0);
 	}
 
+   // 填入IP首部的ID字段
+   // Linux为了防止id回绕采用的策略是对于每一个IP分配一个inet_peer结构
+   // 在这个结构中记录对这个IP的id号
+   // 这样可以很大程度减缓id回绕的速度，但是仍不能完全避免
 	ip_select_ident_more(iph, &rt->u.dst, sk,
 			     (skb_shinfo(skb)->gso_segs ?: 1) - 1);
 

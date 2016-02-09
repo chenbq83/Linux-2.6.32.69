@@ -64,6 +64,9 @@ EXPORT_SYMBOL(remove_wait_queue);
  * stops them from bleeding out - it would still allow subsequent
  * loads to move into the critical region).
  */
+/*
+ * 
+ */
 void
 prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
 {

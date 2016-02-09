@@ -112,6 +112,8 @@ static inline struct thread_info *alloc_thread_info(struct task_struct *tsk)
 #else
 	gfp_t mask = GFP_KERNEL;
 #endif
+   // THREAD_SIZE_ORDER在ARM中定义为1，在x86中定义为多少？
+   // 如果是1，那么分配2个页的内存（2的1次幂）
 	return (struct thread_info *)__get_free_pages(mask, THREAD_SIZE_ORDER);
 }
 

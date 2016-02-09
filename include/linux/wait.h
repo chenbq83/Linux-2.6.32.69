@@ -29,6 +29,13 @@ typedef struct __wait_queue wait_queue_t;
 typedef int (*wait_queue_func_t)(wait_queue_t *wait, unsigned mode, int flags, void *key);
 int default_wake_function(wait_queue_t *wait, unsigned mode, int flags, void *key);
 
+/*
+ * 等待队列链表中的元素类型为wait_queue_t，称之为等待队列项
+ * 每一个等待队列项代表一个睡眠进程，该进程等待某一事件的发生。
+ * 它的描述符地址通常放在private。
+ * task_list字段中包含的是指针，由它把一个元素链接到等待相同事件的进程链表中。
+ * func用来表示等待队列中睡眠进程应该用什么方式唤醒（互斥方式还是非互斥方式）
+ */
 struct __wait_queue {
 	unsigned int flags;
 #define WQ_FLAG_EXCLUSIVE	0x01
@@ -47,6 +54,11 @@ struct wait_bit_queue {
 	wait_queue_t wait;
 };
 
+/*
+ * 等待队列由双向链表实现，其结点包括了指向进程描述符的指针
+ * 每个等待队列都有一个等待队列头
+ * 等待队列头的结构如下。其中自旋锁lock用来防止并发访问，task_list是等待队列的头
+ */
 struct __wait_queue_head {
 	spinlock_t lock;
 	struct list_head task_list;
@@ -246,6 +258,23 @@ do {									\
 	__ret;								\
 })
 
+/*
+ * 首先定义了一个wait_queue_t类型的等待队列项__wait
+ * 循环调用prepare_to_wait，将__wait等待队列项插入到等待队列头wq，
+ * 然后将当前进程设为TASK_INTERRUPTIBLE。
+ * 执行完了立马再检查condition是否满足，如果此时碰巧满足了，则没必要睡眠
+ * 如果还没有满足，则准备睡眠。
+ *
+ * 睡眠是通过schedule函数实现。
+ * 由于之前已经将当前进程设置为TASK_INTERRUPTIBLE状态，
+ * 因此这里执行schedule函数进行切换，之后就永远不会再调度到该进程，直到该进程被唤醒（状态更改为TASK_RUNNING）
+ *
+ * for循环的作用是让进程被唤醒后再检查一下condition是否满足。
+ * 主要是为了防止等待队列上的多个进程被同时唤醒后可能其他进程以及抢先把资源占有
+ *
+ * 进程被唤醒后最后一步是调用finish_wait函数进行清理工作。
+ * 将进程的状态再次设为TASK_RUNNING并从等待队列中删除该进程
+ */
 #define __wait_event_interruptible(wq, condition, ret)			\
 do {									\
 	DEFINE_WAIT(__wait);						\
@@ -278,6 +307,11 @@ do {									\
  *
  * The function will return -ERESTARTSYS if it was interrupted by a
  * signal and 0 if @condition evaluated to true.
+ */
+
+/*
+ * 判断condition条件是否满足
+ * 如果不满足，则调用__wait_event_interruptible函数
  */
 #define wait_event_interruptible(wq, condition)				\
 ({									\
@@ -445,6 +479,7 @@ void abort_exclusive_wait(wait_queue_head_t *q, wait_queue_t *wait,
 int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 
+// 从当前进程current创建出一个等待队列项wait_queue_t类型的结构体
 #define DEFINE_WAIT_FUNC(name, function)				\
 	wait_queue_t name = {						\
 		.private	= current,				\

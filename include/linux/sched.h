@@ -1218,8 +1218,27 @@ struct sched_rt_entity {
 
 struct rcu_node;
 
+/*
+ * 内核通过一个被称为进程描述符的task_struct结构体来管理进程。
+ * 这个结构体包含了一个进程所需的所有信息
+ */
 struct task_struct {
+   /*
+    * 进程状态
+    * TASK_RUNNING 进程要么正在执行，要么准备执行（就绪状态）
+    * TASK_INTERRUPTIBLE 进程被阻塞（睡眠），直到某个条件为真
+    * TASK_UNINTERRUPTIBLE 与上面的状态类似，不过是深度睡眠，不能通过接受一个信号唤醒
+    * TASK_STOPPED 进程被停止执行
+    * TASK_TRACED 进程被debugger等进程监视
+    * EXIT_ZOMBIE 进程的执行被终止，但是其父进程还没有使用wait()等系统调用来获知它的终止信息
+    * EXIT_DEAD 进程的最终状态
+    */
 	volatile long state;	/* -1 unrunnable, 0 runnable, >0 stopped */
+   /*
+    * 进程内核栈
+    * 通过alloc_thread_info函数分配内核栈
+    * 通过free_thread_info函数是否所分配的内核栈
+    */
 	void *stack;
 	atomic_t usage;
 	unsigned int flags;	/* per process flags, defined below */
@@ -1291,6 +1310,11 @@ struct task_struct {
 	/* Revert to default priority/policy when forking */
 	unsigned sched_reset_on_fork:1;
 
+   /*
+    * 一个线程组中的所有线程使用和该线程组的领头线程（该组中的第一个轻量级进程）相同的pid
+    * 并被存放在tgid成员中。只有线程组的领头线程的pid成员才会被设置为与tgid相同的值。
+    * getpid()系统调用返回的是当前进程的tgid而不是pid
+    */
 	pid_t pid;
 	pid_t tgid;
 
@@ -1304,6 +1328,17 @@ struct task_struct {
 	 * older sibling, respectively.  (p->father can be replaced with 
 	 * p->real_parent->pid)
 	 */
+
+   /*
+    * 所有进程之间都有着直接或间接的联系，每个进程都有其父进程，
+    * 也可能有零个或多个子进程。拥有同一个父进程的所有进程具有兄弟关系。
+    *
+    * real_parent指向其父进程，如果创建它的父进程不再存在，则指向PID为1的init进程
+    * parent指向其父进程，当它终止时，必须向它的父进程发送信号。它的值通常与real_parent相同（什么情况下不同？）
+    *
+    * children表示链表的头部，链表中所有元素都是它的子进程
+    *
+    */
 	struct task_struct *real_parent; /* real parent process */
 	struct task_struct *parent; /* recipient of SIGCHLD, wait4() reports */
 	/*
@@ -1981,6 +2016,13 @@ void yield(void);
  */
 extern struct exec_domain	default_exec_domain;
 
+/*
+ * 内核通过thread_union联合体来表示进程的内核栈
+ * 其中THREAD_SIZE为8192（8K bytes）
+ * 用联合体把两个两个结构放在一起很有好处。
+ * 内核很容易从esp寄存器（栈顶指针）获得当前正在CPU上运行的thread_info的地址，
+ * 继而可以得到该进程的task_struct的地址
+ */
 union thread_union {
 	struct thread_info thread_info;
 	unsigned long stack[THREAD_SIZE/sizeof(long)];

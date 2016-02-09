@@ -5696,6 +5696,13 @@ pick_next_task(struct rq *rq)
  */
 asmlinkage void __sched schedule(void)
 {
+   /*
+    * 当schedule需要暂停A进程的执行而继续B进行的执行时，就发生了进程之间的切换。
+    * 进程切换主要有两部分：
+    * 1. 切换全局页表项；2. 切换内核堆栈和硬件上下文。
+    * 切换工作由context_switch()完成。其中switch_to和__switch_to主要完成第二部分。
+    * switch_to主要完成内核堆栈切换，__switch_to主要完成硬件上下文的切换
+    */
 	struct task_struct *prev, *next;
 	unsigned long *switch_count;
 	struct rq *rq;
@@ -5909,6 +5916,10 @@ static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
 {
 	wait_queue_t *curr, *next;
 
+   // 遍历等待队列中所有元素，分别执行其对应的唤醒函数
+   // 默认的唤醒函数是在DEFINE_WAIT中使用的autoremove_wake_function函数
+   // 最终会调用try_to_wake_up函数将进程设置为TASK_RUNNING
+   // 后面进程调度会调度到该进程，从而唤醒该进程继续执行
 	list_for_each_entry_safe(curr, next, &q->task_list, task_list) {
 		unsigned flags = curr->flags;
 

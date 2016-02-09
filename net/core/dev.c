@@ -210,6 +210,8 @@ static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
 /* Device list insertion */
 static int list_netdevice(struct net_device *dev)
 {
+   // 将当前设备对象加入到特定命名空间的几个散列链表中
+   // 这样当网络子系统高层代码需要发送数据包时，它将能通过这些散列链表找到特定的网络设备
 	struct net *net = dev_net(dev);
 
 	ASSERT_RTNL();
@@ -4691,6 +4693,7 @@ int dev_ioctl(struct net *net, unsigned int cmd, void __user *arg)
  *	number.  The caller must hold the rtnl semaphore or the
  *	dev_base_lock to be sure it remains unique.
  */
+// 在当前设备所在的命名空间为设备所提供的接口寻找一个唯一的接口索引值
 static int dev_new_index(struct net *net)
 {
 	static int ifindex;

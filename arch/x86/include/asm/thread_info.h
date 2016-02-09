@@ -23,6 +23,11 @@ struct exec_domain;
 #include <asm/ftrace.h>
 #include <asm/atomic.h>
 
+/*
+ * 线程描述符
+ * 对于每一个进程，内核把它内核态的进程堆栈和进程对应的thread_info这两个数据结构紧凑地
+ * 存放在一个单独为进程分配的内存区域内
+ */
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
 	struct exec_domain	*exec_domain;	/* execution domain */
