@@ -1,3 +1,40 @@
+*******************************************************************************
+
+For Git sparse-checkout
+
+1. git config core.sparsecheckout true
+2. cat .git/info/sparse-checkout
+/*
+!/arch
+/arch/x86
+!/block
+!/crypto
+!/drivers
+/drivers/base
+/drivers/char
+/drivers/input
+/drivers/net
+/drivers/usb
+
+!/firmware
+!/net
+/net/bridge
+/net/core
+/net/ethernet
+/net/ipv4
+/net/netfilter
+/net/netlink
+/net/packet
+
+!/samples
+!/scripts
+!/security
+!/sound
+!/usr
+!/virt
+
+*******************************************************************************
+
 	Linux kernel release 2.6.xx <http://kernel.org/>
 
 These are the release notes for Linux version 2.6.  Read them carefully,
