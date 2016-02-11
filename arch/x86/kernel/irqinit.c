@@ -229,9 +229,15 @@ void __init native_init_IRQ(void)
 	 * us. (some of these will be overridden and become
 	 * 'special' SMP interrupts)
 	 */
+   // 更新外部中断（IRQ）的IDT表项
 	for (i = FIRST_EXTERNAL_VECTOR; i < NR_VECTORS; i++) {
 		/* IA32_SYSCALL_VECTOR could be used in trap_init already. */
+      // 跳过系统调用（trap）使用过的槽位
 		if (!test_bit(i, used_vectors))
+         // 在IDT的第i个表项插入一个中断门。
+         // 门中的段选择符设置为内核代码的段选择符，基偏移量为中断处理程序的地址
+         // 即第二个参数
+         // interrupt数组在entry_32.S中定义，它本质上都会跳转到common_interrupt（在哪里定义？）
 			set_intr_gate(i, interrupt[i-FIRST_EXTERNAL_VECTOR]);
 	}
 

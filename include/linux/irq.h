@@ -108,13 +108,27 @@ struct msi_desc;
  * @release:		release function solely used by UML
  * @typename:		obsoleted by name, kept as migration helper
  */
+
+/*
+ * 外围设备并不能直接发中断给CPU，而是借助“中断控制器”的中间件来完成请求。
+ * 这个过程叫IRQ，中断控制器在处理完相应的电工任务后，将中断请求发送到CPU的中断输入
+ *
+ * 为了屏蔽各种硬件平台的区别，Linux提供了一个统一抽象的平台来实现中断子系统。
+ * irq_chip结构用于描述一个硬件中断控制器，它封装了控制器的名称和相应的操作
+ */
 struct irq_chip {
+   // 控制器的名字
 	const char	*name;
+   // 第一次激活时调用，用于初始化IRQ
 	unsigned int	(*startup)(unsigned int irq);
+   // 对应的关闭操作
 	void		(*shutdown)(unsigned int irq);
+   // 激活IRQ
 	void		(*enable)(unsigned int irq);
+   // 禁用IRQ
 	void		(*disable)(unsigned int irq);
 
+   // 显示的中断确认操作
 	void		(*ack)(unsigned int irq);
 	void		(*mask)(unsigned int irq);
 	void		(*mask_ack)(unsigned int irq);
@@ -172,17 +186,30 @@ struct irq_2_iommu;
  * @dir:		/proc/irq/ procfs entry
  * @name:		flow handler name for /proc/interrupts output
  */
+/*
+ * 中断描述符
+ * 每个中断都有一个编号，系统可以根据编号来区分来访者，是鼠标，键盘还是网卡等等。
+ * 只是出于很多原因，在很多体系结构上，提供的编号是很少的。
+ * 比如两个8259A总共只提供了15个中断槽位。在以前对于个人计算机这已经足够了。
+ * 不过时过境迁，15个槽位已经不够用。
+ * 解决办法之一是中断共享，就是多个外设共享一个中断（需要硬件和内核同时支持）
+ *
+ * 每个中断号的信息使用IRQ描述符来表示
+ */
 struct irq_desc {
 	unsigned int		irq;
 	unsigned int            *kstat_irqs;
 #ifdef CONFIG_INTR_REMAP
 	struct irq_2_iommu      *irq_2_iommu;
 #endif
+   // 指向中断控制芯片的电流处理程序
 	irq_flow_handler_t	handle_irq;
+   // 指向中断控制芯片
 	struct irq_chip		*chip;
 	struct msi_desc		*msi_desc;
 	void			*handler_data;
 	void			*chip_data;
+   // 指向IRQ的中断action列表
 	struct irqaction	*action;	/* IRQ action list */
 	unsigned int		status;		/* IRQ status */
 

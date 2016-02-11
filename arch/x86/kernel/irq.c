@@ -225,15 +225,21 @@ u64 arch_irq_stat(void)
  */
 unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 {
+   // 取得原来的寄存器
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
+   // 取得中断向量号
 	/* high bit used in ret_from_ code  */
 	unsigned vector = ~regs->orig_ax;
 	unsigned irq;
 
+   // 退出idle进程
 	exit_idle();
+   // 进入中断
 	irq_enter();
 
+   // 中断线号与设备的中断号之间对应关系，有系统分配
+   // 分配表是一个per-cpu变量的vector_irq
 	irq = __get_cpu_var(vector_irq)[vector];
 
 	if (!handle_irq(irq, regs)) {
@@ -244,6 +250,7 @@ unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 				__func__, smp_processor_id(), vector, irq);
 	}
 
+   // 结束中断
 	irq_exit();
 
 	set_irq_regs(old_regs);

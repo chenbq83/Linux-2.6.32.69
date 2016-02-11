@@ -35,6 +35,7 @@ static int i8259A_auto_eoi;
 DEFINE_SPINLOCK(i8259A_lock);
 static void mask_and_ack_8259A(unsigned int);
 
+// 8259A中断控制器
 struct irq_chip i8259A_chip = {
 	.name		= "XT-PIC",
 	.mask		= disable_8259A_irq,
@@ -111,6 +112,8 @@ void make_8259A_irq(unsigned int irq)
 {
 	disable_irq_nosync(irq);
 	io_apic_irqs &= ~(1<<irq);
+   // 8259A中断控制器的电流处理函数被注册为handle_level_irq，即为电平触发中断。
+   // 对应的边沿触发中断的处理函数是handle_edge_irq
 	set_irq_chip_and_handler_name(irq, &i8259A_chip, handle_level_irq,
 				      "XT");
 	enable_irq(irq);

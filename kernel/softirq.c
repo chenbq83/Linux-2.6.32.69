@@ -52,6 +52,11 @@ irq_cpustat_t irq_stat[NR_CPUS] ____cacheline_aligned;
 EXPORT_SYMBOL(irq_stat);
 #endif
 
+// 全局软中断数组
+// 一共定义了32个软中断请求描述符。
+// 这个数组是个系统级的全局数组，它被所有的CPU所共享。
+// 每个CPU虽然都有它自己的触发和控制机制，并且只执行它自己触发的软中断请求，
+// 但是，各个CPU所执行的软中断服务例程却是相同的，也即是softirq_vec定义的软中断服务例程
 static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
 
 static DEFINE_PER_CPU(struct task_struct *, ksoftirqd);

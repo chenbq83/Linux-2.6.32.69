@@ -86,12 +86,20 @@ static irqreturn_t timer_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+/*
+ * 定义时钟驱动的irqaction结构体，该结构体用于描述timer中断的基本属性，
+ * 包括中断名、类别和该中断的handler
+ */
 static struct irqaction irq0  = {
 	.handler = timer_interrupt,
 	.flags = IRQF_DISABLED | IRQF_NOBALANCING | IRQF_IRQPOLL | IRQF_TIMER,
 	.name = "timer"
 };
 
+/*
+ *  通过setup_irq函数将timer的irqaction注册进内核。
+ *  中断号0
+ */
 void __init setup_default_timer_irq(void)
 {
 	setup_irq(0, &irq0);

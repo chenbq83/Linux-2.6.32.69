@@ -659,6 +659,11 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 	 * and the interrupt does not nest into another interrupt
 	 * thread.
 	 */
+   /*
+    * 如果thread_fn不为NULL，需要实现中断线程化
+    * 创建一个内核线程，当中断来临时，整个中断线程会被唤醒
+    * 在线程环境去处理这个中断，减少上半部执行的时间，减轻中断上半部的压力
+    */
 	if (new->thread_fn && !nested) {
 		struct task_struct *t;
 
@@ -823,6 +828,16 @@ out_thread:
 	return ret;
 }
 
+/*
+ * 为什么需要中断？
+ * 1. 外设的处理速度一般慢于CPU
+ * 2. CPU不能一直等待外部事件
+ * 所以，设备必须有一种方法来通知CPU它的工作进度，这就是中断
+ */
+/*
+ * 内核提供两个注册中断处理函数的接口：setup_irq和request_irq
+ * 这两个有什么区别？
+ */
 /**
  *	setup_irq - setup an interrupt
  *	@irq: Interrupt line to setup
@@ -830,6 +845,7 @@ out_thread:
  *
  * Used to statically setup interrupts in the early boot process.
  */
+// 通常用在系统时钟（GT Timer）驱动里，注册系统时钟驱动的中断处理函数
 int setup_irq(unsigned int irq, struct irqaction *act)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
@@ -951,6 +967,10 @@ EXPORT_SYMBOL_GPL(remove_irq);
  *	have completed.
  *
  *	This function must not be called from interrupt context.
+ */
+/*
+ * 当设备不再需要使用中断时（通常在驱动卸载时），应当把它们还给系统
+ * 为什么需要dev_id？因为有共享中断（多个设备共享一个中断号）
  */
 void free_irq(unsigned int irq, void *dev_id)
 {

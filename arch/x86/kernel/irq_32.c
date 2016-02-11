@@ -194,15 +194,19 @@ execute_on_irq_stack(int overflow, struct irq_desc *desc, int irq) { return 0; }
 
 bool handle_irq(unsigned irq, struct pt_regs *regs)
 {
+   // 根据中断号，查找相应的desc结构，调用其handle_irq
 	struct irq_desc *desc;
 	int overflow;
 
 	overflow = check_stack_overflow();
 
+   // 取得irq对应的中断描述符
 	desc = irq_to_desc(irq);
 	if (unlikely(!desc))
 		return false;
 
+   // 如果是在中断栈上调用，则复杂一点。
+   // 需要先构造一个中断栈，再调用handle_irq
 	if (!execute_on_irq_stack(overflow, desc, irq)) {
 		if (unlikely(overflow))
 			print_stack_overflow();

@@ -20,6 +20,33 @@
 #include <asm/system.h>
 
 /*
+ * 中断服务程序往往都是在CPU关中断的条件下执行的，以避免中断嵌套而使控制复杂化。
+ * 但是CPU关中断的时间不能太长，否则容易丢失中断信号。
+ * 为此，Linux将中断服务程序一分为二，各称之为上半部（Top Half）和下半部（Bottom Half）
+ *
+ * 前者通常对时间要求较为严格，必须在中断请求发生后立即或至少在一定的时间限制内完成。
+ * 因此，为了保证这种处理能原子地完成，上半部通常是在CPU关中断的条件下执行的。
+ *
+ * 具体地说，上半部的范围包括：从在IDT中登记的中断入口函数一直到驱动程序注册在中断服务队列中的ISR。
+ *
+ * 而下半部则是上半部根据需要来调度执行的，这些操作运行延迟到稍后执行，
+ * 它的时间要求并不严格，通常是在CPU开中断的条件下执行的。
+ *
+ * 但是，这种机制有两个缺点：
+ * 1. 在任意时刻，系统只能有一个CPU可以执行下半部代码，以防止两个或多个CPU同时执行下半部的函数而相互干扰。
+ * 因此下半部代码的执行是严格“串行化”的。
+ * 2. 下半部函数不允许嵌套。
+ *
+ * 这种缺点在SMP系统中非常致命，因为严格串行化执行导致不能充分利用SMP系统的多CPU特点。
+ * 为此，内核在BH机制的基础上进行扩展，这就是“软中断请求”的机制。
+ *
+ * softirq机制是与SMP密不可分的。
+ * 整个softirq机制的设计与实现都自始至终贯彻了一个思想：谁触发，谁执行（Who marks, who runs）
+ * 也就是触发软中断的那个CPU负责执行它所触发的软中断，而且每个CPU都有它自己的软中断触发和控制机制。
+ *
+ */
+
+/*
  * These correspond to the IORESOURCE_IRQ_* defines in
  * linux/ioport.h to select the interrupt line behaviour.  When
  * requesting an interrupt without specifying a IRQF_TRIGGER, the
@@ -57,8 +84,16 @@
  * IRQF_EARLY_RESUME - Resume IRQ early during syscore instead of at device
  *                resume time.
  */
+// 如果设置该位，表示是一个“快速”中断处理程序，否则是一个“慢速”中断处理程序
+// 快速中断，保证中断处理的原子性（不被打断），而慢速中断则不保证。
+// 也就是“开启中断”标志位（处理器IF）在运行快速中断处理程序时时关闭的，
+// 因此在服务该中断时，不会被其他类型的中断打断。
+// 而调用慢速中断处理时，其他类型的中断仍可以得到服务
 #define IRQF_DISABLED		0x00000020
 #define IRQF_SAMPLE_RANDOM	0x00000040
+// 表明中断可以在设备间共享
+// 共享中断就是将不同的设备（比如串口和网卡）挂到同一个中断信号线上。
+// Linux对共享的支持主要是为PCI设备服务。
 #define IRQF_SHARED		0x00000080
 #define IRQF_PROBE_SHARED	0x00000100
 #define __IRQF_TIMER		0x00000200
@@ -101,11 +136,16 @@ typedef irqreturn_t (*irq_handler_t)(int, void *);
  * @thread:	thread pointer for threaded interrupts
  * @thread_flags:	flags related to @thread
  */
+// irqaction是中断子系统面向驱动程序界面提供的接口。
+// 驱动程序在初始化的时候向内核注册，调用request_irq向中断子系统注册。
+// request_irq函数会构造一个irqaction，并将其关联到相应的中断描述符上
 struct irqaction {
 	irq_handler_t handler;
 	unsigned long flags;
+   // name和dev_id唯一地标识一个中断处理程序
 	const char *name;
 	void *dev_id;
+   // 用于实现共享的IRQ处理程序，相同irq号的一个或几个irqaction被组织在一个链表中
 	struct irqaction *next;
 	int irq;
 	struct proc_dir_entry *dir;
@@ -122,6 +162,18 @@ request_threaded_irq(unsigned int irq, irq_handler_t handler,
 		     irq_handler_t thread_fn,
 		     unsigned long flags, const char *name, void *dev);
 
+/*
+ * irq：中断号
+ * handler：中断处理函数
+ *   中断处理函数就是普通的C代码。其特别之处在于中断处理程序是在“中断上下文”中运行的。
+ *   它的行为受到了某些限制：
+ *   1. 不能向用户空间发送或接收数据（用户空间和进程对应，中断上下文不对应任何进程）
+ *   2. 不能使用可能引起阻塞的函数
+ *   3. 不能使用可能引起调度的函数
+ * flags：与中断管理有关的各种选项
+ * name：设备名
+ * dev：共享中断时使用
+ */
 static inline int __must_check
 request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
 	    const char *name, void *dev)

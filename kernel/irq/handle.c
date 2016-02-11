@@ -132,6 +132,8 @@ static void init_one_irq_desc(int irq, struct irq_desc *desc, int node)
  */
 DEFINE_SPINLOCK(sparse_irq_lock);
 
+// IRQ相关信息的管理的关键之处在于，内核引入了一个irq_desc类型的全局数组来记录它们。
+// 每个数组的项对应一个IRQ编号，数组下标与中断号一一对应
 struct irq_desc **irq_desc_ptrs __read_mostly;
 
 static struct irq_desc irq_desc_legacy[NR_IRQS_LEGACY] __cacheline_aligned_in_smp = {
@@ -164,6 +166,7 @@ int __init early_irq_init(void)
 	legacy_count = ARRAY_SIZE(irq_desc_legacy);
 	node = first_online_node;
 
+   // 为中断描述符分配空间
 	/* allocate irq_desc_ptrs array based on nr_irqs */
 	irq_desc_ptrs = kcalloc(nr_irqs, sizeof(void *), GFP_NOWAIT);
 
@@ -172,6 +175,9 @@ int __init early_irq_init(void)
 					  sizeof(int), GFP_NOWAIT, node);
 
 	for (i = 0; i < legacy_count; i++) {
+      // 为每个irq_desc_ptrs的元素初始化。
+      // 这里并没有初始化中断描述符的电流处理函数handle_irq成员。
+      // 留到具体的控制器中去完成，如8259A make_8259A_irq()
 		desc[i].irq = i;
 #ifdef CONFIG_SMP
 		desc[i].node = node;
@@ -189,6 +195,7 @@ int __init early_irq_init(void)
 	return arch_early_irq_init();
 }
 
+// 根据设备中断号取得相应的中断描述符
 struct irq_desc *irq_to_desc(unsigned int irq)
 {
 	if (irq_desc_ptrs && irq < nr_irqs)
@@ -372,9 +379,13 @@ irqreturn_t handle_IRQ_event(unsigned int irq, struct irqaction *action)
 	irqreturn_t ret, retval = IRQ_NONE;
 	unsigned int flags = 0;
 
+   // 因为CPU会禁止中断，这里将其打开。
+   // 如果没有指定IRQF_DISABLED标志的话，它表示处理程序在中断禁止情况下运行
+   // 也就是允不允许中断被打断
 	if (!(action->flags & IRQF_DISABLED))
 		local_irq_enable_in_hardirq();
 
+   // 遍历当前irq的action链表中所有的action，调用它们的handler
 	do {
 		trace_irq_handler_entry(irq, action);
 		ret = action->handler(irq, action->dev_id);

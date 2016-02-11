@@ -470,18 +470,23 @@ handle_level_irq(unsigned int irq, struct irq_desc *desc)
 	 * If its disabled or no action available
 	 * keep it masked and get out of here
 	 */
+   // 从中断描述符中取得action
+   // 如果没有action，或者中断被关闭，退出
 	action = desc->action;
 	if (unlikely(!action || (desc->status & IRQ_DISABLED)))
 		goto out_unlock;
 
+   // 设置IRQ_INPROGRESS，表示正在处理
 	desc->status |= IRQ_INPROGRESS;
 	spin_unlock(&desc->lock);
 
+   // 调用高层的中断处理函数handle_IRQ_event进一步处理
 	action_ret = handle_IRQ_event(irq, action);
 	if (!noirqdebug)
 		note_interrupt(irq, desc, action_ret);
 
 	spin_lock(&desc->lock);
+   // 处理完毕，清楚正在处理标志
 	desc->status &= ~IRQ_INPROGRESS;
 
 	if (unlikely(desc->status & IRQ_ONESHOT))
@@ -708,11 +713,14 @@ set_irq_chip_and_handler(unsigned int irq, struct irq_chip *chip,
 	__set_irq_handler(irq, handle, 0, NULL);
 }
 
+// 注册irq_chip和设置电流处理程序
 void
 set_irq_chip_and_handler_name(unsigned int irq, struct irq_chip *chip,
 			      irq_flow_handler_t handle, const char *name)
 {
+   // 取得IRQ对应的中断描述符，设置其chip成员
 	set_irq_chip(irq, chip);
+   // 设置IRQ对应的中断描述符的handle_irq成员
 	__set_irq_handler(irq, handle, 0, name);
 }
 

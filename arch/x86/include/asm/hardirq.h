@@ -4,6 +4,11 @@
 #include <linux/threads.h>
 #include <linux/irq.h>
 
+/*
+ * 要实现“谁触发，谁执行”的思想，就必须为每个CPU都定义它自己的触发和控制变量。
+ * 为此，定义了irq_cpustat_t来描述一个CPU的中断统计信息
+ * 其中就有用于触发和控制软中断的成员变量
+ */
 typedef struct {
 	unsigned int __softirq_pending;
 	unsigned int __nmi_count;	/* arch dependent */
