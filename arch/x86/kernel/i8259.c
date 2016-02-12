@@ -25,6 +25,23 @@
 #include <asm/i8259.h>
 
 /*
+ * http://blog.csdn.net/yunsongice/article/details/5306207
+ *
+ * 每个能够发出中断请求的硬件设备控制器都有一条名为IRQ的输出线。
+ * 所有现有的IRQ线都与一个可编程中断控制器PIC的硬件电路的输入引脚相连。
+ *
+ * PIC执行下列动作：
+ * 1. 监视IRQ线，检查产生的信号。如果两条或两条以上的IRQ线上产生信号，选择引脚编号较小的IRQ线
+ * 2. 如果有信号出现在IRQ线上：
+ *   a. 把接收到的引发信号转换成对应的向量号
+ *   b. 把这个向量存放在中断控制器的一个I/O端口（0x20，0x21），从而运行CPU通过数据总线读此向量
+ *   c. 把引发信号发送到处理器的INTR引脚，即产生一个中断
+ *   d. 等待，直到CPU通过把这个中断信号写进PIC的一个I/O端口来确认它；
+ *      当这种情况发生时，请INTR线
+ * 3. 返回第1步
+ */
+
+/*
  * This is the 'legacy' 8259A Programmable Interrupt Controller,
  * present in the majority of PC/AT boxes.
  * plus some generic x86 specific things if generic specifics makes
@@ -310,18 +327,30 @@ void unmask_8259A(void)
 
 void init_8259A(int auto_eoi)
 {
+   /*
+    * 8259A内部的四个中断命令字（ICW）寄存器，都是用来启动初始化编程的：
+    * ICW1：初始化命令字
+    * ICW2：中断向量寄存器
+    * ICW3：8259的级联命令字，用来区分主片和从片
+    * ICW4：指定中断嵌套方式、数据缓冲选择、中断结束方式和CPU类型
+    */
 	unsigned long flags;
 
 	i8259A_auto_eoi = auto_eoi;
 
 	spin_lock_irqsave(&i8259A_lock, flags);
 
+   // 送数据到工作寄存器OCW1（中断屏蔽字）
+   // 屏蔽所有外部中断，因此此时系统尚未初始化完成
 	outb(0xff, PIC_MASTER_IMR);	/* mask all of 8259A-1 */
 	outb(0xff, PIC_SLAVE_IMR);	/* mask all of 8259A-2 */
 
 	/*
 	 * outb_pic - this has to work on a wide range of PC hardware.
 	 */
+   // 送0x11到ICW1（通过端口0x20），启动初始化编程
+   // 0x11表示外部中断请求信号为上升沿有效
+   // 系统中有多片8259A级联，还表示要向ICW4送数据
 	outb_pic(0x11, PIC_MASTER_CMD);	/* ICW1: select 8259A-1 init */
 
 	/* ICW2: 8259A-1 IR0-7 mapped to 0x30-0x37 on x86-64,

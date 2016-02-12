@@ -317,6 +317,7 @@ static inline void set_desc_limit(struct desc_struct *desc, unsigned long limit)
 	desc->limit = (limit >> 16) & 0xf;
 }
 
+// 设置中断描述符表idt_table中的第gate项
 static inline void _set_gate(int gate, unsigned type, void *addr,
 			     unsigned dpl, unsigned ist, unsigned seg)
 {
@@ -363,39 +364,85 @@ static inline void alloc_intr_gate(unsigned int n, void *addr)
 
 /*
  * This routine sets up an interrupt gate at directory privilege level 3.
+ * 以下函数设置中断描述符表idt_table的第n项
+ * _set_gate的第二个参数对应于中断门或陷阱门格式中的D标志位加上类型位段。
+ * 第四个参数对应于DPL位段。
  */
 static inline void set_system_intr_gate(unsigned int n, void *addr)
 {
+   /*
+    * 系统门，用户态进程可以访问Intel系统门（DPL=3）
+    * 通过系统门来激活三个Linux异常处理程序，它们的向量是4，5和128
+    * 因此，在用户态，可以发布into、bound和int $0x80三条汇编语言指令
+    */
+
+   // 中断门，包含段选择符和中断或异常处理程序的段内偏移量。
+   // 当控制权转移到一个适当的段时，处理器清IF标志，从而关闭将来会发生的可屏蔽中断
 	BUG_ON((unsigned)n > 0xFF);
+   // GATE_INTERRUPT（0xE）表示D标志位为1，类型为110，所以设置的是中断门
+   // DPL设置为3.
+   // 当中断时由外部产生或者CPU异常产生的，中断门的DPL是被忽略不顾的，所以总能穿过该中断门
 	_set_gate(n, GATE_INTERRUPT, addr, 0x3, 0, __KERNEL_CS);
 }
 
 static inline void set_system_trap_gate(unsigned int n, void *addr)
 {
+   /*
+    * int指令允许用户态进程发出一个中断信号，其值可以是0-255的任意一个向量。
+    * 因此，为了防止用户通过int指令模拟非法的中断和异常，IDT的初始化必须非常小心。
+    * 这可以通过把中断门或陷阱门的DPL字段设置为0来实现
+    * 
+    * 这里只允许0x80的中断穿过陷阱门
+    * 从用户态发出的其他中断则不允许穿过陷阱门
+    */
+
+   // 陷阱门，与中断门相似，只是控制权转移到一个适当的段时处理器不清除IF标志
 	BUG_ON((unsigned)n > 0xFF);
+   // DPL设置为3
 	_set_gate(n, GATE_TRAP, addr, 0x3, 0, __KERNEL_CS);
 }
 
 static inline void set_trap_gate(unsigned int n, void *addr)
 {
+   /*
+    * 陷阱门，用户态程序不能访问的一个Intel陷阱门（DPL=0）
+    * 大部分Linux异常处理程序都通过陷阱门来激活
+    */
+
 	BUG_ON((unsigned)n > 0xFF);
 	_set_gate(n, GATE_TRAP, addr, 0, 0, __KERNEL_CS);
 }
 
 static inline void set_task_gate(unsigned int n, unsigned int gdt_entry)
 {
+   /*
+    * 任务门，不能被用户态进程访问的Intel任务门（DPL=0）
+    * Linux对“double fault”异常的处理程序时由任务门激活的
+    */
+
+   // 任务门，当中断信号发生时，必须取代当前进程的那个进程的TSS选择符存放在任务门中
 	BUG_ON((unsigned)n > 0xFF);
 	_set_gate(n, GATE_TASK, (void *)0, 0, 0, (gdt_entry<<3));
 }
 
 static inline void set_intr_gate_ist(int n, void *addr, unsigned ist)
 {
+   /*
+    * 中断门，用户态的进程不能访问Intel中断门（DPL=0）
+    * 所有的Linux中断处理程序都通过中断门激活，并全部限制在内核态
+    */
+
 	BUG_ON((unsigned)n > 0xFF);
 	_set_gate(n, GATE_INTERRUPT, addr, 0, ist, __KERNEL_CS);
 }
 
 static inline void set_system_intr_gate_ist(int n, void *addr, unsigned ist)
 {
+   /*
+    * 系统中断门，能够被用户态进程访问的Intel中断门（DPL=3）
+    * 与向量3相关的异常处理程序是由系统中断门激活的。因此，在用户态可以使用汇编语言指令int3
+    */
+
 	BUG_ON((unsigned)n > 0xFF);
 	_set_gate(n, GATE_INTERRUPT, addr, 0x3, ist, __KERNEL_CS);
 }

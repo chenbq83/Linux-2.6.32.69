@@ -17,6 +17,11 @@
 
 #ifndef __KERNEL__
 
+/*
+ * 存放在栈中的寄存器结构pt_regs
+ * 在内核中，很多函数的参数是pt_regs结构体
+ * 把这个结构与内核栈的内容相比较，会发现堆栈的内容是这个数据结构的一个映像
+ */
 struct pt_regs {
 	long ebx;
 	long ecx;

@@ -20,10 +20,12 @@
  *	updated in fork.c:copy_process, signal.c:do_signal,
  *	ptrace.c and ptrace.h
  *
+ * 相关寄存器与堆栈指针（ESP）的相对位置
+ * 寄存器的偏移位置与struct pt_regs中的成员一致
  *	 0(%esp) - %ebx
  *	 4(%esp) - %ecx
  *	 8(%esp) - %edx
- *       C(%esp) - %esi
+ *  C(%esp) - %esi
  *	10(%esp) - %edi
  *	14(%esp) - %ebp
  *	18(%esp) - %eax
@@ -33,10 +35,10 @@
  *	28(%esp) - %gs		saved iff !CONFIG_X86_32_LAZY_GS
  *	2C(%esp) - orig_eax
  *	30(%esp) - %eip
- *	34(%esp) - %cs
+ *	34(%esp) - %cs    用户空间的CS:EIP，构成了返回到用户态的地址
  *	38(%esp) - %eflags
  *	3C(%esp) - %oldesp
- *	40(%esp) - %oldss
+ *	40(%esp) - %oldss 用户栈的SS:ESP
  *
  * "current" is in register %ebx during any slow entries.
  */
@@ -191,6 +193,12 @@
 
 #endif	/* CONFIG_X86_32_LAZY_GS */
 
+/*
+ * SAVE_ALL可以在栈中保存中断处理程序可能会用到的所有CPU寄存器，
+ * 但是EFLAGS、CS、EIP、SS和ESP除外，
+ * 因为这些寄存器已经由控制单元自动保存了
+ * 然后把用户数据段的选择符装载到DS和ES寄存器
+ */
 .macro SAVE_ALL
 	cld
 	PUSH_GS
@@ -514,20 +522,25 @@ sysexit_audit:
 	PTGS_TO_GS_EX
 ENDPROC(ia32_sysenter_target)
 
+/* 用户程序需要系统提供服务的时候，会通过系统调用产生一个int 0x80的软中断
+   就会进入到系统调用的入口函数 */
 	# system call handler stub
 ENTRY(system_call)
 	RING0_INT_FRAME			# can't unwind into user space anyway
-	pushl %eax			# save orig_eax
+	pushl %eax			      # save orig_eax 将系统调用号压入栈中
 	CFI_ADJUST_CFA_OFFSET 4
-	SAVE_ALL
-	GET_THREAD_INFO(%ebp)
+	SAVE_ALL                # 将寄存器的值压入堆栈当中，压入的顺序对应着结构体struct pt_regs
+                           # 当出栈的时候，就将这些值传递到结构体struct pt_regs里面的成员
+                           # 从而实现了从汇编代码向C程序传递参数
+	GET_THREAD_INFO(%ebp)   # 根据ebp寄存器获得当前进程的thread_info结构的地址，从而获得当前进程的信息
 					# system call tracing in operation / emulation
 	testl $_TIF_WORK_SYSCALL_ENTRY,TI_flags(%ebp)
-	jnz syscall_trace_entry
-	cmpl $(nr_syscalls), %eax
+	jnz syscall_trace_entry # 如果发生被跟踪的情况则转向相应的处理命令处
+	cmpl $(nr_syscalls), %eax # 对用户态进程传递过来的系统调用号的合法性进行检查
 	jae syscall_badsys
-syscall_call:
-	call *sys_call_table(,%eax,4)
+syscall_call:              # 合法则跳转到相应系统调用号所对应的服务例程中
+                           # 也就是sys_call_table表中找到相应的函数入口
+	call *sys_call_table(,%eax,4) # 每个表项4个字节，表的基地址+%eax*4
 syscall_after_call:
 	movl %eax,PT_EAX(%esp)		# store the return value
 syscall_exit:
@@ -562,7 +575,10 @@ irq_return:
 	INTERRUPT_RETURN
 .section .fixup,"ax"
 ENTRY(iret_exc)
+   # 当异常发生时，如果控制单元没有自动把一个硬件出错代码压入栈中，
+   # 相应的汇编语言片段就会包含一条pushl $0指令，在栈中垫上一个空值
 	pushl $0			# no error code
+   # 把C函数的地址压入栈中
 	pushl $do_iret_error
 	jmp error_code
 .previous
@@ -771,6 +787,42 @@ PTREGSCALL(vm86old)
 .endm
 
 /*
+ * http://blog.csdn.net/yunsongice/article/details/5306207
+ *
+ * 当CPU执行了一条指令后，CS:EIP指向了下一条要执行的指令的逻辑地址。
+ * 在处理那条指令之前，控制单元会检查运行前一条指令时是否已经发生了一个中断或异常。
+ * 如果发生了，执行下列操作：
+     1. 确定与中断或异常相关的向量i（0<=i<=255）
+     2. 读由idtr指向的IDT表中的第i项（包含的是一个中断门或陷阱门）
+     3. 从gdtr获得GDT表的基地址，并在GDT中查找，以读取IDT表项中的选择符所标识的段描述符。
+        这个描述符指定中断或异常处理程序所在段的基地址
+     4. 确认中断时由授权的中断发生源发出的。
+        首先将当前特权级CPL（存放在CS寄存器的低两位）与段描述符（存放在GDT中）的描述符特权级DPL比较。
+        如果CPL小于DPL，就产生“General protection”异常，因为中断处理程序的特权不能低于引起中断的程序的特权。
+        对于编程异常，则做进一步的检测：比较CPL与处于IDT中的门描述符的DPL。
+        这最后一个检查可以避免用户应用程序访问特殊的陷阱门或中断门
+     5. 检查特权级是否发生变化，也就是CPL是否不同于DPL
+        如果是，控制单元必须开始使用与新的特权级相关的栈。
+        通过执行以下步骤：
+        a. 读tr寄存器，以访问运行进程的TSS段
+        b. 用与新特权级相关的栈段和栈指针的正确值装载SS和ESP寄存器，这些值可以在TSS中找到
+        c. 在新的栈中保存SS和ESP以前的值，这些值定义了与旧的特权级相关的栈的逻辑地址
+     6. 如果故障已发生，用引起异常的指令地址装载CS和EIP，从而使得这条指令能再次被执行。
+     7. 在栈中保存EFLAGS、CS和EIP的内容
+     8. 如果异常产生了一个硬件出错码，则将它保存在栈中。
+     9. 装载CS和EIP，其值分别是IDT表中第i项门描述符的段选择符和偏移量字段
+  * 中断或异常处理完后，相应的处理程序必须产生一条iret指令，把控制器转交给被中断的进程。
+    这迫使控制单元：
+     1. 用保存在栈中的值装载CS、EIP和EFLAGS
+     2. 检查处理程序的CPL是否等于CS中最低两位的值（意味着被中断的进程与处理程序是否在同一特权级）
+        如果是，iret终止执行，否则转入下一步。
+     3. 从栈中装载SS和ESP，因此，返回到与旧特权级相关的栈。
+     4. 检查DS、ES、FS和GS段寄存器的内容。
+        如果其中一个寄存器包含的选择符是一个段描述符，并且其DPL值小于CPL，那么清相应段的寄存器。
+        这么做是为了禁止用户态的程序利用内核以前所用的段寄存器。
+        如果不清这些寄存器，恶意的用户态程序可能利用它们来访问内核空间地址。
+ */
+/*
  * Build the entry stubs and pointer table with some assembler magic.
  * We pack 7 stubs into a single 32-byte chunk, which will fit in a
  * single cache line on all modern x86 implementations.
@@ -818,6 +870,9 @@ common_interrupt:
 	addl $-0x80,(%esp)	/* Adjust vector into the [-256,-1] range */
 	SAVE_ALL
 	TRACE_IRQS_OFF
+   /* 保存寄存器以后，栈顶的地址被存放到EAX中，
+    * 然后调用do_IRQ函数。到执行到do_IRQ的ret指令时，控制转到ret_from_intr()（从中断和异常返回）
+    */
 	movl %esp,%eax
 	call do_IRQ
 	jmp ret_from_intr
@@ -1223,6 +1278,22 @@ ENTRY(page_fault)
 	pushl $do_page_fault
 	CFI_ADJUST_CFA_OFFSET 4
 	ALIGN
+/*
+ * http://blog.csdn.net/yunsongice/article/details/5306406
+ *
+ * 标号error_code的汇编语言片段对所有的异常处理程序都是相同的，除了“Device not available”这一个异常。
+ * 这段代码执行下列步骤：
+     1. 把高级C函数可能用到的寄存器保存在栈中
+     2. 产生一条cld指令来清EFLAGS的方向标志DF，确保调用字符串指令时会自动增加EDI和ESI的值
+     3. 把栈中位于ESP+36的硬件出错码拷贝到EDX中，给栈中这一位置存上-1，这个值用来把0x80异常与其他异常隔离开
+     4. 把栈中位于ESP+32的do_handler_name高级C函数的地址装入EDI，然后在栈的这个位置写入ES的值
+     5. 把内核栈的当前栈顶拷贝到EAX。
+        这个地址表示内存单元的地址，在这个单元中存放的是第1步所保存的最后一个寄存器的值
+     6. 把用户数据段的选择符拷贝到DS和ES
+     7. 调用地址在EDI的高级C函数
+        被调用的函数从EAX和EDX寄存器而不是从栈中接收参数。
+        执行进程切换的主要函数__switch_to()就是一个从CPU寄存器获取参数的函数
+ */
 error_code:
 	/* the function address is in %gs's slot on the stack */
 	pushl %fs

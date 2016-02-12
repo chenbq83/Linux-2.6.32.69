@@ -115,24 +115,33 @@ struct cpu_vfs_cap_data {
 
 /**
  ** POSIX-draft defined capabilities.
+ ** Linux用“权能”来表示一个进程所具有的权力。
+ ** 一种权能仅仅是一个标志，它表明是否允许进程执行一个特定的操作或者一组特定的操作。
+ ** 优点：即使一位有恶意的用户使用有潜在错误的程序，他也只能非法地执行有限个操作类型
+ ** 例如：假定一个有潜在错误的程序只有CAP_SYS_TIME权能。
+ ** 在这种情况下，利用其错误的用户只能在非法地改变实时时钟和系统时钟方面获得成功，
+ ** 他并不能执行其他任何特权的操作
  **/
 
 /* In a system with the [_POSIX_CHOWN_RESTRICTED] option defined, this
    overrides the restriction of changing file ownership and group
    ownership. */
 
+// 忽略对文件和组的拥有者进行改变的限制
 #define CAP_CHOWN            0
 
 /* Override all DAC access, including ACL execute access if
    [_POSIX_ACL] is defined. Excluding DAC access covered by
    CAP_LINUX_IMMUTABLE. */
 
+// 忽略文件的访问许可权
 #define CAP_DAC_OVERRIDE     1
 
 /* Overrides all DAC restrictions regarding read and search on files
    and directories, including ACL restrictions if [_POSIX_ACL] is
    defined. Excluding DAC access covered by CAP_LINUX_IMMUTABLE. */
 
+// 忽略文件/目录读和搜索的许可权
 #define CAP_DAC_READ_SEARCH  2
 
 /* Overrides all restrictions about allowed operations on files, where

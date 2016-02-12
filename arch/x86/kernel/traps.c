@@ -74,6 +74,12 @@ char ignore_fpu_irq;
  * The IDT has to be page-aligned to simplify the Pentium
  * F0 0F bug workaround.
  */
+/*
+ * 中断描述符表
+ * CPU上有一个idtr寄存器，专门用于保存中断描述符表的地址。
+ * 当产生一个中断时，CPU会自动从idtr寄存器保存的中断描述符表地址处获取相应的中断向量，
+ * 然后判断权限并跳转到中断处理函数
+ */
 gate_desc idt_table[NR_VECTORS] __page_aligned_data = { { { { 0, 0 } } }, };
 #endif
 
@@ -938,6 +944,10 @@ dotraplinkage void do_iret_error(struct pt_regs *regs, long error_code)
 }
 #endif
 
+/*
+ * 内核在初始化阶段完成了对页式虚存管理的初始化以后，便调用trap_init()和init_IRQ()进行中断机制的初始化。
+ * trap_init主要是对一些系统保留的中断向量的初始化，而init_IRQ则主要是用于外设的中断
+ */
 void __init trap_init(void)
 {
 	int i;
@@ -950,12 +960,19 @@ void __init trap_init(void)
 	early_iounmap(p, 4);
 #endif
 
+   // 故障。当一个程序试图执行整数被0除的时候产生
 	set_intr_gate(0, &divide_error);
+   // 陷阱或故障
+   // 产生于：
+   // 1. 设置EFLAGS的TF标志时（对于实现调试程序的单步执行）
+   // 2. 一条指令或操作数的地址落在一个活动debug寄存器的范围之内（参见“硬件上下文”）
 	set_intr_gate_ist(1, &debug, DEBUG_STACK);
 	set_intr_gate_ist(2, &nmi, NMI_STACK);
 	/* int3 can be called from all */
+   // 陷阱。由int3指令引起（通常由debugger插入）
 	set_system_intr_gate_ist(3, &int3, DEBUG_STACK);
 	/* int4 can be called from all */
+   // 陷阱。当EFLAGS的OF（overflow）标志被设置时，into（检查溢出）指令被执行
 	set_system_intr_gate(4, &overflow);
 	set_intr_gate(5, &bounds);
 	set_intr_gate(6, &invalid_op);
@@ -970,6 +987,7 @@ void __init trap_init(void)
 	set_intr_gate(11, &segment_not_present);
 	set_intr_gate(12, &stack_segment);
 	set_intr_gate(13, &general_protection);
+   // 页面异常。CPU在页面映射及访问的过程中发生问题（如缺页），就会产生异常
 	set_intr_gate(14, &page_fault);
 	set_intr_gate(15, &spurious_interrupt_bug);
 	set_intr_gate(16, &coprocessor_error);
@@ -1001,6 +1019,7 @@ void __init trap_init(void)
 		printk("done.\n");
 	}
 
+   // 系统调用0x80
 	set_system_trap_gate(SYSCALL_VECTOR, &system_call);
 	set_bit(SYSCALL_VECTOR, used_vectors);
 #endif

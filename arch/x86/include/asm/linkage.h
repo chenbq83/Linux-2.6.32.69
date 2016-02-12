@@ -6,6 +6,13 @@
 #undef notrace
 #define notrace __attribute__((no_instrument_function))
 
+/*
+ * 宏asmlinkage的定义
+ * __attribute__((regparm(0)))表示的是不通过寄存器来传递参数，而是通过栈来传递
+ * 因此，可以看到在system_call里调用SAVE_ALL，将寄存器的值压入堆栈，
+ * 当出栈的时候，就将这些值传递到结构体struct pt_regs，
+ * 从而实现了从汇编代码向C程序传递参数
+ */
 #ifdef CONFIG_X86_32
 #define asmlinkage CPP_ASMLINKAGE __attribute__((regparm(0)))
 /*

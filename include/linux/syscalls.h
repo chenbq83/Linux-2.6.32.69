@@ -259,6 +259,9 @@ static void prof_sysexit_disable_##sname(void)				       \
 #endif
 
 /*
+ * 在内核中，系统调用函数的实现并不是对应的sys_XXX的一个函数的实现，
+ * 而是经过一个宏的封装
+ *
  * http://blog.csdn.net/hazir/article/details/11835025
  *
  * 反斜杠\：当宏定义过长需要换行时，在行尾要加上换行标志\

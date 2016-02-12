@@ -235,7 +235,8 @@ unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 
    // 退出idle进程
 	exit_idle();
-   // 进入中断
+   // 进入中断。使表示中断处理程序嵌套数量的计数器递增。
+   // 计数器是指当前进程thread_info结构的preempt_count字段
 	irq_enter();
 
    // 中断线号与设备的中断号之间对应关系，有系统分配

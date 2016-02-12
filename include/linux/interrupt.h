@@ -404,13 +404,13 @@ static inline int disable_irq_wake(unsigned int irq)
 
 enum
 {
-	HI_SOFTIRQ=0,
-	TIMER_SOFTIRQ,
-	NET_TX_SOFTIRQ,
-	NET_RX_SOFTIRQ,
+	HI_SOFTIRQ=0,         // 处理高优先级的tasklet
+	TIMER_SOFTIRQ,        // 和时钟中断相关的tasklet
+	NET_TX_SOFTIRQ,       // 把数据包传送到网卡
+	NET_RX_SOFTIRQ,       // 从网卡接收数据包
 	BLOCK_SOFTIRQ,
 	BLOCK_IOPOLL_SOFTIRQ,
-	TASKLET_SOFTIRQ,
+	TASKLET_SOFTIRQ,      // 处理常规tasklet
 	SCHED_SOFTIRQ,
 	HRTIMER_SOFTIRQ,
 	RCU_SOFTIRQ,	/* Preferable RCU should always be the last softirq */

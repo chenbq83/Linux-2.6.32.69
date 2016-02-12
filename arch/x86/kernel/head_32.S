@@ -20,6 +20,11 @@
 #include <asm/processor-flags.h>
 #include <asm/percpu.h>
 
+/*
+ * Kernel的符号被链接到以__PAGE_OFFSET为基址的地方。
+ * __PAGE_OFFSET=0xC0000000，内核线性地址空间在高1G的位置，
+ * 映射的是物理地址0开始的位置，所以内核线性地址减去__PAGE_OFFSET就是物理地址
+ */
 /* Physical address */
 #define pa(X) ((X) - __PAGE_OFFSET)
 
@@ -43,6 +48,8 @@
  *     (KERNEL_IMAGE_SIZE/4096) / 1024 pages (worst case, non PAE)
  *     (KERNEL_IMAGE_SIZE/4096) / 512 + 4 pages (worst case for PAE)
  *
+ * NOTE: PAE（物理地址扩展），32位CPU地址线有36位
+ *
  * Modulo rounding, each megabyte assigned here requires a kilobyte of
  * memory, which is currently unreclaimed.
  *
@@ -58,6 +65,9 @@
 #define PAGE_TABLE_SIZE(pages) ((pages) / PTRS_PER_PGD)
 #endif
 
+/*
+ * 32位一下PAGE_SHIFT=12，__PAGE_OFFSET=0xC0000000
+ * 从3G到4G这1G的内存空间一共了0x40000个页（每页4k）
 /* Enough space to fit pagetables for the low memory linear map */
 MAPPING_BEYOND_END = \
 	PAGE_TABLE_SIZE(((1<<32) - __PAGE_OFFSET) >> PAGE_SHIFT) << PAGE_SHIFT
@@ -88,6 +98,12 @@ ENTRY(startup_32)
 
 /*
  * Set segments to known values.
+ * 设置gdtr为boot_gdt_descr并设置所有段为__BOOT_DS
+ *
+ * 加载全局描述符表寄存器，将boot_gdt_descr的物理地址所对应的内容加载到GDTR寄存器
+ * pa宏
+ * 此刻因为没有分页，所以实际上变量的偏移的值都是实际的n再加上0xC0000000
+ * boot_gdt_descr - 0xC0000000得到的就是boot_gdt_descr所在的物理地址
  */
 	lgdt pa(boot_gdt_descr)
 	movl $(__BOOT_DS),%eax
@@ -100,13 +116,13 @@ ENTRY(startup_32)
 /*
  * Clear BSS first so that there are no surprises...
  */
-	cld
+	cld                        /* 清除方向标志，使得SI -> DI */
 	xorl %eax,%eax
-	movl $pa(__bss_start),%edi
+	movl $pa(__bss_start),%edi /* 将__bss_start的物理地址计算出来放在edi */ 
 	movl $pa(__bss_stop),%ecx
-	subl %edi,%ecx
-	shrl $2,%ecx
-	rep ; stosl
+	subl %edi,%ecx             /* 两值相减，得到BSS内核未初始化数据段的长度 */
+	shrl $2,%ecx               /* 右移两位，得到32bit一个传输单元的BSS的长度 */
+	rep ; stosl                /* 把DS:SI指向的内存单元传输到ES:DI指向的内存单元，长度是ecx */
 /*
  * Copy bootup parameters out of the way.
  * Note: %esi still has the pointer to the real-mode data.
@@ -223,10 +239,26 @@ default_entry:
 #else	/* Not PAE */
 
 page_pde_offset = (__PAGE_OFFSET >> 20);
+   /*
+    * __brk_base是页表首地址
+    * edi = 页表首地址
+    * edx = 初始页目录地址
+    */
 
-	movl $pa(__brk_base), %edi
-	movl $pa(swapper_pg_dir), %edx
-	movl $PTE_IDENT_ATTR, %eax
+	movl $pa(__brk_base), %edi      // 页表首地址：各页表从这里开始存放
+	movl $pa(swapper_pg_dir), %edx  // 页目录首地址：所谓的临时页全局目录
+	movl $PTE_IDENT_ATTR, %eax      // 页表项属性
+
+   /*
+    * 1. 每个活动进程有个一个页目录
+    * 2. 当前进程的页目录“物理地址”存放在CR3寄存器中
+    * 3. 32位线性地址被分为3个部分 Directory[10] + Table[10] + Offset[12]
+    * 4. CR3指向页目录表，表项为各Table物理地址，Table表项为页的地址。
+    *    这两种表项的结构相同，低12位作为属性，高20位是物理地址
+    * 5. 用Directory字段作为索引在CR3所指位置开始查Table的物理地址
+    *    用Table字段在上一步的页表中查，找到具体的页的物理地址
+    * 6. Offset找到页中偏移的字节
+    */
 10:
 	leal PDE_IDENT_ATTR(%edi),%ecx		/* Create PDE entry */
 	movl %ecx,(%edx)			/* Store identity PDE entry */
@@ -419,6 +451,11 @@ is386:	movl $2,%ecx		# set MP
 
 	call check_x87
 	lgdt early_gdt_descr
+   # Linux运行在保护模式下时会依赖几个基本的硬件相关的数据结构
+   # 包括全局描述符表、局部描述符表和中断描述符表。
+   # 其中全局描述符表的基地址保存在GDTR，中断描述符表的基地址保存在IDTR
+   # 这两个寄存器的存取都有相应的汇编指令。
+   # IDTR的结构：由两部分组成，指示中断描述符表基地址的32位段基址和中的描述符表长度的16为界限，共48位
 	lidt idt_descr
 	ljmp $(__KERNEL_CS),$1f
 1:	movl $(__KERNEL_DS),%eax	# reload all the segment registers
@@ -495,6 +532,20 @@ check_x87:
  *
  *  Warning: %esi is live across this function.
  */
+
+/*
+ * 当计算机运行在实模式时，IDT就被初始化并由BIOS例程使用。
+ * 但是，一旦Linux接管，IDT就被移到RAM的另一个区域，并进行第二次初始化。
+ * 因为Linux没有利用任何BIOS的例程
+ *
+ * setup_idt函数用同一个中断门（ignore_int）来填充256个idt_table表项
+ */
+/*
+ * 下面4句中，EAX高16位存放段选择子CS，低16位是中断服务程序ignore_int偏移量的0-15bit
+ * EDX高16位是中断服务程序ignore_int偏移量16-31bit，低16位是类型和保留位
+ * 所以，EAX是中断描述符的低4字节，EDX是高4字节，它们被用在下面的rp_sidt中。
+ * 这段代码初始化idt_table所指的中断描述符，虽然中断服务函数都是默认值
+ */
 setup_idt:
 	lea ignore_int,%edx
 	movl $(__KERNEL_CS << 16),%eax
@@ -504,9 +555,9 @@ setup_idt:
 	lea idt_table,%edi
 	mov $256,%ecx
 rp_sidt:
-	movl %eax,(%edi)
-	movl %edx,4(%edi)
-	addl $8,%edi
+	movl %eax,(%edi)   // 中断描述符的低4字节
+	movl %edx,4(%edi)  // 中断描述符的高4字节
+	addl $8,%edi       // 指向下一个表项
 	dec %ecx
 	jne rp_sidt
 
@@ -566,6 +617,16 @@ hlt_loop:
 	hlt
 	jmp hlt_loop
 
+/*
+ * ignore_int可以看作是一个空的处理程序。它执行下列动作：
+ * 1. 在栈中保存一些寄存器的内容
+ * 2. 调用printk打印“Unknown interrupt”系统消息
+ * 3. 从栈恢复寄存器的内容
+ * 4. 执行iret指令以恢复被中断的程序
+ * ignore_int应该从不被执行。如果被执行了，
+ * 要么是出现了一个硬件的问题（一个I/O设备产生了没有预料到的中断）
+ * 要么是出现了一个内核的问题（一个中断或异常未被适当地处理）
+ */
 /* This is the default interrupt "handler" :-) */
 	ALIGN
 ignore_int:
@@ -695,13 +756,24 @@ fault_msg:
 	ALIGN
 # early boot GDT descriptor (must use 1:1 address mapping)
 	.word 0				# 32 bit align gdt_desc.address
+# 全局描述符表
+# 48bit的寄存器，32bit的基地址+16bit的段限
 boot_gdt_descr:
+   # __BOOT_DS是初始化阶段的数据段选择子，其值为0x88，
+   # 这里加上7是什么意思？
 	.word __BOOT_DS+7
+   # GDT表在内存中的地址（看来是物理地址）
 	.long boot_gdt - __PAGE_OFFSET
 
 	.word 0				# 32-bit align idt_desc.address
+# 中断描述符表
+# 每一项对应着一个中断或异常向量，每个向量由8个字节组成
+# 因此最多256*8个字节来存放IDT
+# IDT可以放在内存的任何地方，由idtr寄存器指定它的线性基地址及其限制（长度）
 idt_descr:
+   # 这里放入的是表长度，256*8 - 1
 	.word IDT_ENTRIES*8-1		# idt contains 256 entries
+   # idt_table地址放在这里
 	.long idt_table
 
 # boot GDT descriptor (later on used by CPU#0):
@@ -713,6 +785,16 @@ ENTRY(early_gdt_descr)
 /*
  * The boot_gdt must mirror the equivalent in setup.S and is
  * used only for booting.
+ */
+/*
+ * fill的格式是：.fill repeat, size, value
+ * 这里fill的含义是反复拷贝size（8）个字节。把repeat（2）个字节以8个为一组，
+ * 每组的最高4个字节内容为0，最低4字节内容置为value（0）。
+ * 直白点的意思是：申请两个8字节的空间，其内容为0
+ *
+ * 第一个8字节，表示内核4GB代码段的描述符内容，起始地址为0x00000000
+ * 第二个8字节，表示内核4GB数据段的描述符内容，起始地址为0x00000000
+ * 这里还处于初始化阶段，不存在用户代码段和数据段
  */
 	.align L1_CACHE_BYTES
 ENTRY(boot_gdt)

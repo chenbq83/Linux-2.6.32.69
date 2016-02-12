@@ -47,10 +47,19 @@ enum {
 	GATE_TASK = 0x5,
 };
 
+/*
+ * 门描述符，64位，主要保存了段选择符、权限位和中断处理程序入口地址。
+ * CPU主要将门分为三种：任务门，中断门，陷阱门
+ * 但是Linux为了处理更多种情况，把门分为五种：中断门，系统门，系统中断门，陷阱门，任务门
+ */
 /* 16byte gate */
 struct gate_struct64 {
 	u16 offset_low;
 	u16 segment;
+   // p：表示段是否在内存中，因为Linux从不把整个段交换到硬盘上，所以p都被置为1
+   // dpl：表示权限，用于限制对这个段的存取。
+   //   当为0时，只有cpl=0（内核态）才能够访问这个段。
+   //   当为3时，任何等级的cpl（用户态或者内核态）都可以访问
 	unsigned ist : 3, zero0 : 5, type : 5, dpl : 2, p : 1;
 	u16 offset_middle;
 	u32 offset_high;
