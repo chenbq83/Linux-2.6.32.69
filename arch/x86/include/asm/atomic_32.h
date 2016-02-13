@@ -7,6 +7,26 @@
 #include <asm/cmpxchg.h>
 
 /*
+ * http://blog.csdn.net/yunsongice/article/details/5605254
+ *
+ * 80x86指令的特点：
+ * 1. 进行零次或一次对齐内存访问的汇编指令时原子的
+ * 2. 如果在读操作之后、写操作之前没有其他处理器占用内存总线，那么从内存中读数据、
+ *    更新数据并把更新后的数据写会内存中的这些“读-修改-写”汇编语言指令（如inc、dec）
+ *    是原子的。
+ *    所以，在多处理器系统，这里就会有竞争条件了。而在单处理器系统，不会发生内存总线被窃用的情况。
+ * 3. 操作码前缀是lock字节（0xf0）的“读-修改-写”指令即使在多处理器系统中也是原子的。
+ *    当控制单元检查到这个前缀时，就“锁定”内存总线，直到这条指令完成为止。
+ *    因此，当加锁的指令执行时，其他处理器不能访问这个内存单元（可以访问其他内存单元？）
+ * 4. 操作码前缀是一个rep字节（0xf2, 0xf3）的汇编语言指令不是原子的。
+ *    这条指令强行让控制单元多次重复执行相同的指令。控制单元在执行新的循环之前要检查挂起的中断。
+ *
+ * 内核提供了一个专门的atomic_t类型和一些专门的宏和函数。这些宏和函数作用与atomic_t类型的变量，
+ * 并当作单独的、原子的汇编语言指令来使用。
+ * 在多处理器系统，每条这样的指令都有一个lock字节的前缀。
+ */
+
+/*
  * Atomic operations that C can't guarantee us.  Useful for
  * resource counting etc..
  */
@@ -18,6 +38,7 @@
  * @v: pointer of type atomic_t
  *
  * Atomically reads the value of @v.
+ * 读操作是原子的
  */
 static inline int atomic_read(const atomic_t *v)
 {
@@ -30,6 +51,7 @@ static inline int atomic_read(const atomic_t *v)
  * @i: required value
  *
  * Atomically sets the value of @v to @i.
+ * 写操作是原子的
  */
 static inline void atomic_set(atomic_t *v, int i)
 {
@@ -42,6 +64,7 @@ static inline void atomic_set(atomic_t *v, int i)
  * @v: pointer of type atomic_t
  *
  * Atomically adds @i to @v.
+ * “读-修改-写”操作不是原子的，需要lock前缀来锁定内存总线
  */
 static inline void atomic_add(int i, atomic_t *v)
 {
@@ -56,6 +79,7 @@ static inline void atomic_add(int i, atomic_t *v)
  * @v: pointer of type atomic_t
  *
  * Atomically subtracts @i from @v.
+ * “读-修改-写”操作不是原子的，需要lock前缀来锁定内存总线
  */
 static inline void atomic_sub(int i, atomic_t *v)
 {
@@ -72,6 +96,7 @@ static inline void atomic_sub(int i, atomic_t *v)
  * Atomically subtracts @i from @v and returns
  * true if the result is zero, or false for all
  * other cases.
+ * 从v中减去i，如果结果为0，则返回1，否则返回0
  */
 static inline int atomic_sub_and_test(int i, atomic_t *v)
 {
