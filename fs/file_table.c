@@ -223,6 +223,8 @@ EXPORT_SYMBOL(init_file);
 
 void fput(struct file *file)
 {
+   // 体系架构相关的原则测试操作。
+   // 如果f_count的值为1，那么它将返回true
 	if (atomic_long_dec_and_test(&file->f_count))
 		__fput(file);
 }
@@ -277,6 +279,10 @@ void __fput(struct file *file)
 		if (file->f_op && file->f_op->fasync)
 			file->f_op->fasync(-1, file, 0);
 	}
+   // 调用设备驱动程序提供的release函数
+   //
+   // 对于应用程序的一个close调用，并非必然对应着release函数的调用。
+   // 只有在当前文件的所有副本都关闭之后，release函数才会被调用。
 	if (file->f_op && file->f_op->release)
 		file->f_op->release(inode, file);
 	security_file_free(file);

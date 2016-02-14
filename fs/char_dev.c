@@ -94,16 +94,22 @@ static struct char_device_struct *
 __register_chrdev_region(unsigned int major, unsigned int baseminor,
 			   int minorct, const char *name)
 {
+   // 注册一个字符设备
 	struct char_device_struct *cd, **cp;
 	int ret = 0;
 	int i;
 
+   // 动态申请一个字符设备结构
 	cd = kzalloc(sizeof(struct char_device_struct), GFP_KERNEL);
 	if (cd == NULL)
 		return ERR_PTR(-ENOMEM);
 
 	mutex_lock(&chrdevs_lock);
 
+   // 如果传递进来的主设备号major是0，那么由系统自动分配主设备号
+   // 分配的算法是从chrdev数组（主设备号是索引）的最后一项开始往前扫描，
+   // 如果发现某一项对应的值是NULL（也就是还没有分配），那么就把该项的索引
+   // 分配该字符设备。
 	/* temporary */
 	if (major == 0) {
 		for (i = ARRAY_SIZE(chrdevs)-1; i > 0; i--) {
@@ -119,14 +125,19 @@ __register_chrdev_region(unsigned int major, unsigned int baseminor,
 		ret = major;
 	}
 
+   // 初始化字符设备结构
 	cd->major = major;
 	cd->baseminor = baseminor;
 	cd->minorct = minorct;
 	strlcpy(cd->name, name, sizeof(cd->name));
 
+   // 有主设备号计算索引，就是简单的取模运算
+   // chrdev是一个hash表
 	i = major_to_index(major);
 
 	for (cp = &chrdevs[i]; *cp; cp = &(*cp)->next)
+      // hash表冲突算法。
+      // 链表排序：按主设备号从小到大，相同主设备的按次设备号从小到大排序
 		if ((*cp)->major > major ||
 		    ((*cp)->major == major &&
 		     (((*cp)->baseminor >= baseminor) ||
@@ -135,6 +146,7 @@ __register_chrdev_region(unsigned int major, unsigned int baseminor,
 
 	/* Check for overlapping minor ranges.  */
 	if (*cp && (*cp)->major == major) {
+      // 使用同一个主设备号的，其次设备号的范围不能重叠
 		int old_min = (*cp)->baseminor;
 		int old_max = (*cp)->baseminor + (*cp)->minorct - 1;
 		int new_min = baseminor;
@@ -153,6 +165,7 @@ __register_chrdev_region(unsigned int major, unsigned int baseminor,
 		}
 	}
 
+   // 把结点加入到chrdev哈希表
 	cd->next = *cp;
 	*cp = cd;
 	mutex_unlock(&chrdevs_lock);
@@ -380,6 +393,8 @@ static int chrdev_open(struct inode *inode, struct file *filp)
 		struct kobject *kobj;
 		int idx;
 		spin_unlock(&cdev_lock);
+      // 通过kobj_lookup在cdev_map中用inode->i_rdev来查找设备号所对应的设备new
+      // 这里展示了设备号的作用
 		kobj = kobj_lookup(cdev_map, inode->i_rdev, &idx);
 		if (!kobj)
 			return -ENXIO;
@@ -402,10 +417,14 @@ static int chrdev_open(struct inode *inode, struct file *filp)
 		return ret;
 
 	ret = -ENXIO;
+   // 成功查找到设备后，将设备对象的ops指针赋值给filp->f_op
+   // 这里展示了如何将驱动程序中实现的struct file_operations与filp关联起来
 	filp->f_op = fops_get(p->ops);
 	if (!filp->f_op)
 		goto out_cdev_put;
 
+   // 检查驱动程序中是否实现了open函数
+   // 如果实现了，调用设备驱动程序中的open函数，打开一个字符设备
 	if (filp->f_op->open) {
 		ret = filp->f_op->open(inode,filp);
 		if (ret)
@@ -487,12 +506,18 @@ static int exact_lock(dev_t dev, void *data)
  * 对系统而言，当设备驱动程序成功调用了cdev_add之后，
  * 就意味着一个字符设备对象已经加入到系统，只需要的时候，系统就可以找到它。
  * 对用户态程序而言，cdev_add调用之后，就可以通过文件系统的接口呼叫到我们的驱动程序
+ *
+ * 参数：
+ * p：要加入系统的字符设备对象的指针
+ * dev：该设备的设备号
+ * count：从次设备号开始连续的设备数量
  */
 int cdev_add(struct cdev *p, dev_t dev, unsigned count)
 {
    // 将字符设备对象p注册进系统
 	p->dev = dev;
 	p->count = count;
+   // 通过操作全局变量cdev_map来把设备加入到其中的哈希链表
 	return kobj_map(cdev_map, dev, count, NULL, exact_match, exact_lock, p);
 }
 

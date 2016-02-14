@@ -1614,12 +1614,18 @@ void __init inode_init(void)
 		INIT_HLIST_HEAD(&inode_hashtable[loop]);
 }
 
+/*
+ * 主要功能是为新生成的inode初始化其中的i_fop和i_rdev成员
+ * 设备文件节点inode中的i_rdev成员表示该inode所对应的设备的设备号
+ * i_fop成员的初始化根据是字符设备还是块设备而有不同的赋值。
+ * 对于字符设备，fop指向def_chr_fops，后者主要定义了一个open操作
+ */
 void init_special_inode(struct inode *inode, umode_t mode, dev_t rdev)
 {
 	inode->i_mode = mode;
 	if (S_ISCHR(mode)) {
-		inode->i_fop = &def_chr_fops;
-		inode->i_rdev = rdev;
+		inode->i_fop = &def_chr_fops; // 字符设备，定义了open
+		inode->i_rdev = rdev;         // 设备号
 	} else if (S_ISBLK(mode)) {
 		inode->i_fop = &def_blk_fops;
 		inode->i_rdev = rdev;

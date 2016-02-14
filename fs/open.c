@@ -1108,11 +1108,17 @@ int filp_close(struct file *filp, fl_owner_t id)
 {
 	int retval = 0;
 
+   // 判断filp中的f_count成员是否为0
 	if (!file_count(filp)) {
+      // 如果针对同一个设备文件close的次数多于open次数，就会出现这种情况
 		printk(KERN_ERR "VFS: Close: file count is 0\n");
 		return 0;
 	}
 
+   // 调用flush，这是为了确保在把文件关闭前缓存在系统中的数据被真正写回到硬件中。
+   // 字符设备很少会出现这种情况，因为这种设备的慢速I/O特性决定了它无须使用这种缓冲机制来提升性能
+   // 但是块设备就不一样，内核为块设备驱动程序设计了高速缓存机制
+   // 这种情况下为了保证文件数据的完整性，必须在文件关闭前将高速缓存中的数据写回到块设备中。
 	if (filp->f_op && filp->f_op->flush)
 		retval = filp->f_op->flush(filp, id);
 

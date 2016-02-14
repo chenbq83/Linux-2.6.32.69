@@ -33,7 +33,9 @@ int kobj_map(struct kobj_map *domain, dev_t dev, unsigned long range,
 	     struct module *module, kobj_probe_t *probe,
 	     int (*lock)(dev_t, void *), void *data)
 {
+   // n表示设备号范围(dev, dev+range)中不同主设备号的个数
 	unsigned n = MAJOR(dev + range - 1) - MAJOR(dev) + 1;
+   // 开始的主设备号
 	unsigned index = MAJOR(dev);
 	unsigned i;
 	struct probe *p;
@@ -41,6 +43,8 @@ int kobj_map(struct kobj_map *domain, dev_t dev, unsigned long range,
 	if (n > 255)
 		n = 255;
 
+   // 设备驱动程序把它所管理的设备对象的指针嵌入到一个类型为struct probe的节点之中
+   // 然后再把该节点加入到cdev_map所实现的哈希链表中
 	p = kmalloc(sizeof(struct probe) * n, GFP_KERNEL);
 
 	if (p == NULL)
@@ -52,10 +56,12 @@ int kobj_map(struct kobj_map *domain, dev_t dev, unsigned long range,
 		p->lock = lock;
 		p->dev = dev;
 		p->range = range;
-		p->data = data;
+		p->data = data;     // 设备对象的指针
 	}
 	mutex_lock(domain->lock);
 	for (i = 0, p -= n; i < n; i++, p++, index++) {
+      // 根据主设备号计算索引，找到对应的链表
+      // 加入链表的时候根据range从小到大排序
 		struct probe **s = &domain->probes[index % 255];
 		while (*s && (*s)->range < range)
 			s = &(*s)->next;

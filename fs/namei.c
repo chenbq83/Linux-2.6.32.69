@@ -1768,6 +1768,7 @@ struct file *do_filp_open(int dfd, const char *pathname,
 		goto exit_parent;
 
 	error = -ENFILE;
+   // 为每个打开的文件分配一个新的struct file类型的内存空间
 	filp = get_empty_filp();
 	if (filp == NULL)
 		goto exit_parent;
@@ -2122,6 +2123,14 @@ out_unlock:
 	return error;
 }
 
+/*
+ * sys_mknod
+ * 通过命令行工具mknod静态创建设备结点，
+ * 如mknod /dev/xxx c 2 0 （设备文件/dev/xxx，字符设备c，主设备号2，次设备号0）
+ *
+ * 参数：
+ * dev：是由用户空间的mknod命令构造出的设备号
+ */
 SYSCALL_DEFINE3(mknod, const char __user *, filename, int, mode, unsigned, dev)
 {
 	return sys_mknodat(AT_FDCWD, filename, mode, dev);

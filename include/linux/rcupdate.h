@@ -1,4 +1,19 @@
 /*
+ * http://blog.csdn.net/yunsongice/article/details/5607680
+ *
+ * 读-拷贝-更新（RCU）是为了保护在多数情况下被多个CPU读的数据结构而设计的
+ * 一直同步技术。RCU允许多个读者和写着并发执行（相对于只允许一个写着执行的
+ * 顺序锁有了改进）。而且，RCU是不使用锁的，就是说，它不使用被所有CPU共享的
+ * 锁或者计数器。在这一点上与读写自旋锁和顺序锁（由于高速缓存行窃用和失效
+ * 而有很高的开销）相比RCU具有更大的优势。
+ *
+ * RCU如何不使用共享数据结构而实现多个CPU同步呢？
+ * 其关键的思想包括限制RCU的范围的两个约束条件：
+ * 1. RCU只保护被动态分配并通过指针引用的数据结构
+ * 2. 在被RCU保护的临界区中，任何内核控制路径都不能睡眠
+ */
+
+/*
  * Read-Copy Update mechanism for mutual exclusion
  *
  * This program is free software; you can redistribute it and/or modify
@@ -124,7 +139,7 @@ extern struct lockdep_map rcu_lock_map;
  */
 static inline void rcu_read_lock(void)
 {
-	__rcu_read_lock();
+	__rcu_read_lock();  // preempt_disable()
 	__acquire(RCU);
 	rcu_read_acquire();
 }

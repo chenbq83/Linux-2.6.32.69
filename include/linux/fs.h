@@ -909,6 +909,11 @@ static inline int ra_has_index(struct file_ra_state *ra, pgoff_t index)
 #define FILE_MNT_WRITE_TAKEN	1
 #define FILE_MNT_WRITE_RELEASED	2
 
+/*
+ * 内核用struct file对象来描述进程打开的每一个文件的视图，
+ * 即使是打开同一个文件，内核也会为之生成一个新的struct file对象，
+ * 用了表示当前操作的文件的相关信息。
+ */
 struct file {
 	/*
 	 * fu_list becomes invalid after file_free is called and queued via
@@ -923,7 +928,11 @@ struct file {
 #define f_vfsmnt	f_path.mnt
 	const struct file_operations	*f_op;
 	spinlock_t		f_lock;  /* f_ep_links, f_flags, no IRQ */
+   // 用于对struct file对象的使用计数。
+   // 当close一个文件时，只有f_count成员为0才真正地执行关闭操作
 	atomic_long_t		f_count;
+   // 用于记录当前文件被open时所指定的打开模式
+   // 这个成员将会影响到后续的read/write等函数的行为模式
 	unsigned int 		f_flags;
 	fmode_t			f_mode;
 	loff_t			f_pos;
@@ -936,6 +945,9 @@ struct file {
 	void			*f_security;
 #endif
 	/* needed for tty driver, and maybe others */
+   // 用来记录设备驱动程序自身定义的数据
+   // 因为filp指针会在驱动程序实现的file_operations对象其他成员函数之间传递，
+   // 所以可以通过它在某一个特定文件视图的基础上共享数据
 	void			*private_data;
 
 #ifdef CONFIG_EPOLL
