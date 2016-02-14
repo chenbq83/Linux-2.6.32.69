@@ -5,8 +5,12 @@
 void *kmap(struct page *page)
 {
 	might_sleep();
+   // 判断页面是否真的来自高端内存
 	if (!PageHighMem(page))
+      // 如果不是，用page_address返回页面对应的KVA
 		return page_address(page);
+   // 如果是，调用kmap_high在内核虚拟地址空间的动态映射区或者固定映射区
+   // 分配一个新的KVA并将其映射到物理页面上，返回该KVA
 	return kmap_high(page);
 }
 

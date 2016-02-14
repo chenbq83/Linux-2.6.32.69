@@ -36,6 +36,12 @@ typedef unsigned long mm_counter_t;
  * moment. Note that we have no way to track which tasks are using
  * a page, though if it is a pagecache page, rmap structures can tell us
  * who is mapping it.
+ *
+ * 内存页是物理内存管理中的最小单位，有时也叫页帧。
+ * Linux为系统物理内存的每个页都创建一个struct page对象
+ * 系统用一全局变量struct page *mem_map来存放所有物理页page对象的指针。
+ * 页的大小取决于系统中的内存管理单元MMU，后者用来将虚拟空间的地址
+ * 转换为物理空间地址
  */
 struct page {
 	unsigned long flags;		/* Atomic flags, some possibly

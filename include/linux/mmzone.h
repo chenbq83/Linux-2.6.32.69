@@ -197,6 +197,9 @@ struct per_cpu_pageset {
 enum zone_type {
 #ifdef CONFIG_ZONE_DMA
 	/*
+    * 当有些设备不能使用所有的ZONE_NORMAL区域中的内存空间作DMA访问时，
+    * 就可以使用ZONE_DMA所表示的内存区域。
+    * 于是我们把这部分空间划分出来专门用做DMA访问的内存空间
 	 * ZONE_DMA is used when there are devices that are not able
 	 * to do DMA to all of addressable memory (ZONE_NORMAL). Then we
 	 * carve out the portion of memory that is needed for these devices.
@@ -218,6 +221,8 @@ enum zone_type {
 #endif
 #ifdef CONFIG_ZONE_DMA32
 	/*
+    * x86_64架构因为除了支持只能使用低于16MB空间的DMA设备外，还支持可以
+    * 访问4GB以下空间的32位DMA设备。所以需要两个ZONE_DMA内存区域
 	 * x86_64 needs two ZONE_DMAs because it supports devices that are
 	 * only able to do DMA to the lower 16M but also 32 bit devices that
 	 * can only do DMA areas below 4G.
@@ -225,6 +230,8 @@ enum zone_type {
 	ZONE_DMA32,
 #endif
 	/*
+    * 常规内存访问区域由ZONE_NORMAL标识。如果DMA设备可以在此区域作内存访问，
+    * 也可以使用本区域
 	 * Normal addressable memory is in ZONE_NORMAL. DMA operations can be
 	 * performed on pages in ZONE_NORMAL if the DMA devices support
 	 * transfers to all addressable memory.
@@ -232,6 +239,11 @@ enum zone_type {
 	ZONE_NORMAL,
 #ifdef CONFIG_HIGHMEM
 	/*
+    * 高端内存区域用ZONE_HIGHMEM标识。
+    * 该区域无法从内核虚拟地址空间直接作线性映射，所以为访问该区域必须经过内核
+    * 特殊的页映射。比如在i386体系上，内核空间1GB，除去其他一些开销，能对物理地址
+    * 进行线性映射的空间大约只有896MB。此时高于896MB以上的物理地址空间就叫
+    * ZONE_HIGHMEM区域。
 	 * A memory area that is only addressable by the kernel through
 	 * mapping portions into its own address space. This is for example
 	 * used by i386 to allow the kernel to address the memory beyond
@@ -283,6 +295,14 @@ struct zone_reclaim_stat {
 	unsigned long		nr_saved_scan[NR_LRU_LISTS];
 };
 
+/*
+ * 内存区域struct pglist_data属于单个内存节点中的概念。
+ * 考虑到系统的各个模块对分配的物理内存有不同的要求，比如32位x86系统架构下的DMA
+ * 只能访问16MB以下的物理内存空间，因此Linux又将每个内存节点pglist_data管理的
+ * 物理内存划分为不同的内存区域。
+ *
+ * Struct zone数据结构表示每一个内存区域，内存区域的类型用zone_type表示
+ */
 struct zone {
 	/* Fields commonly accessed by the page allocator */
 
@@ -621,6 +641,19 @@ extern struct page *mem_map;
  *
  * Memory statistics and page replacement data structures are maintained on a
  * per-zone basis.
+ *
+ * 在计算机世界中，有两种物理内存管理模型：
+ * 1. UMA（一致内存访问，Uniform Memory Access）模型
+ *    该模型的内存空间在物理上也许是不连续的，但所有的内存空间对系统中的处理器而言具有
+ *    相同的访问特性，也即系统中所有的处理器对这些内存的访问具有相同的速度
+ * 2. NUMA（非一致内存访问，Non-Uniform Memory Access）
+ *    使用这种模型的总是多处理器系统，系统中的各个处理器都有本地内存，
+ *    处理器之间通过总线连接起来以支持对其他处理器本地内存的访问。
+ *    处理器访问本地内存的速度要快于对其他处理器本地内存的访问。
+ *
+ * 内核里以struct pglist_data数据结构来表示单个内存节点。
+ * 对于NUMA模型，多个内存节点通过链表串联起来。
+ * UMA模型因为只有一个内存节点，因而不存在这样的链表
  */
 struct bootmem_data;
 typedef struct pglist_data {

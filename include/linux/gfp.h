@@ -18,9 +18,13 @@ struct vm_area_struct;
  * without the underscores and use the consistently. The definitions here may
  * be used in bit comparisons.
  */
+// 在ZONE_DMA标识的内存区域中查找空闲页
 #define __GFP_DMA	((__force gfp_t)0x01u)
+// 在ZONE_HIGHMEM标识的内存区域中查找空闲页
 #define __GFP_HIGHMEM	((__force gfp_t)0x02u)
+// 在ZONE_DMA32标识的内存区域中查找空闲页
 #define __GFP_DMA32	((__force gfp_t)0x04u)
+// 内核将分配的物理页面标记为可移动的
 #define __GFP_MOVABLE	((__force gfp_t)0x08u)  /* Page is movable */
 #define GFP_ZONEMASK	(__GFP_DMA|__GFP_HIGHMEM|__GFP_DMA32|__GFP_MOVABLE)
 /*
@@ -37,7 +41,11 @@ struct vm_area_struct;
  * __GFP_MOVABLE: Flag that this page will be movable by the page migration
  * mechanism or reclaimed
  */
+// 当前正在向内核申请页分配的进程可以被阻塞，
+// 意味着调度器可以在此期间调度另一个进程执行
 #define __GFP_WAIT	((__force gfp_t)0x10u)	/* Can wait and reschedule? */
+// 内核允许使用紧急分配链表中的保留内存页。
+// 该请求必须以原子方式完成，意味着请求过程不允许被中断
 #define __GFP_HIGH	((__force gfp_t)0x20u)	/* Should access emergency pools? */
 #define __GFP_IO	((__force gfp_t)0x40u)	/* Can start physical IO? */
 #define __GFP_FS	((__force gfp_t)0x80u)	/* Can call down to low-level FS? */
@@ -71,12 +79,19 @@ struct vm_area_struct;
 /* This equals 0, but use constants in case they ever change */
 #define GFP_NOWAIT	(GFP_ATOMIC & ~__GFP_HIGH)
 /* GFP_ATOMIC means both !wait (__GFP_WAIT not set) and use emergency pool */
+// 内核模块中最常用的掩码之一，用于原子分配。
+// 在分配内存页时，绝对不能中断当前进程或者把当前进程移出调度器。
+// 必要的情况下可以使用仅限紧急情况使用的保留页内存。
+// 在驱动程序中，一般在中断处理例程或者非进程上下文的代码中使用它进行内存分配，
+// 因为这种情况下分配都必须保证当前进程不能睡眠
 #define GFP_ATOMIC	(__GFP_HIGH)
 #define GFP_NOIO	(__GFP_WAIT)
 #define GFP_NOFS	(__GFP_WAIT | __GFP_IO)
+// 内核模块中最常用的掩码之一，分配内存时可能导致当前进程进入睡眠
 #define GFP_KERNEL	(__GFP_WAIT | __GFP_IO | __GFP_FS)
 #define GFP_TEMPORARY	(__GFP_WAIT | __GFP_IO | __GFP_FS | \
 			 __GFP_RECLAIMABLE)
+// 用于为用户空间分配内存页，可能引起进程的休眠
 #define GFP_USER	(__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HARDWALL)
 #define GFP_HIGHUSER	(__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HARDWALL | \
 			 __GFP_HIGHMEM)
@@ -283,6 +298,18 @@ static inline struct page *alloc_pages_node(int nid, gfp_t gfp_mask,
 	if (nid < 0)
 		nid = numa_node_id();
 
+   // __alloc_pages函数负责分配2的order次方个连续的物理页面并返回起始页的struct page实例
+   //
+   // 如果gfp_mask没有明确指定__GFP_HIGHMEM，那么分配的物理页面必然来自ZONE_NORMAL或者ZONE_DMA。
+   // 由于这两个区域在内核初始化阶段就已经建立了映射关系，所以内核模块可以使用page_address来获得
+   // 对应页面的内核虚拟地址（KVA）。
+   // KVA = PAGE_OFFSET + pg_pa
+   //
+   // 如果gfp_mask明确指定了__GFP_HIGHMEM，那么页分配器将优先在ZONE_HIGHMEM域中分配物理页面，
+   // 但是不能排除该域中没有足够的空闲页导致页面来自其他域。
+   // 对于新分配的高端物理页面，由于内核尚未在页表中为之建立映射关系，所以此时需要：
+   // 1. 在内核的动态映射区分配一个KVA
+   // 2. 通过操作页表，将1中的KVA映射到该物理页面上，内核为此提供了kmap函数
 	return __alloc_pages(gfp_mask, order, node_zonelist(nid, gfp_mask));
 }
 

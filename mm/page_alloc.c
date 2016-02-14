@@ -1982,6 +1982,8 @@ EXPORT_SYMBOL(__alloc_pages_nodemask);
 
 /*
  * Common helper functions.
+ * 负责分配2的order次方个连续物理页面，返回起始页面所在的内核线性地址。
+ * 不能从高端内存中分配物理页面
  */
 unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
