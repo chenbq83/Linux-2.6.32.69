@@ -20,6 +20,11 @@ struct list_head {
 	struct list_head *next, *prev;
 };
 
+/*
+ * 链表的声明可以使用两种方式：
+ * 1. 使用LIST_HEAD宏在编译的时候静态初始化
+ * 2. 使用INIT_LIST_HEAD在运行时初始化
+ */
 #define LIST_HEAD_INIT(name) { &(name), &(name) }
 
 #define LIST_HEAD(name) \

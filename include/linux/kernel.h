@@ -705,6 +705,9 @@ static inline void ftrace_dump(void) { }
  * @type:	the type of the container struct this is embedded in.
  * @member:	the name of the member within the struct.
  *
+ * 通过typeof定义一个member类型的指针变量__mptr（即__mptr是指向member类型的指针）,赋值为ptr
+ * 通过offsetof宏计算member在type中的偏移量，然后用member的实际地址减去偏移，即得到type的起始地址
+ *
  */
 #define container_of(ptr, type, member) ({			\
 	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\

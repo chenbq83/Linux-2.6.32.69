@@ -37,6 +37,8 @@ EXPORT_SYMBOL(init_task);
  * so they are allowed to end up in the .data.cacheline_aligned
  * section. Since TSS's are completely CPU-local, we want them
  * on exact cacheline boundaries, to eliminate cacheline ping-pong.
+ *
+ * 定义一个数字init_tss[]，每个CPU都有一个struct tss_struct
  */
 DEFINE_PER_CPU_SHARED_ALIGNED(struct tss_struct, init_tss) = INIT_TSS;
 

@@ -495,6 +495,19 @@ static void __init boot_cpu_init(void)
 
 void __init __weak smp_setup_processor_id(void)
 {
+   // http://blog.csdn.net/yin262/article/details/46728095
+   //
+   // __weak属性：可以让编译器在编译的时候忽略函数未定义的错误
+   //
+   // 弱符号：
+   // 若两个或两个以上全局符号（函数或变量名）名字一样，而其中之一声明为弱符号，
+   // 则这些全局符号不会引起重定义错误。
+   // 链接器会忽略弱符号，去使用普通的全局符号来解析所有对这些符号的引用，
+   // 但是当普通的全局符号不可用时，链接器会使用弱符号。
+   //
+   // 有些架构比如arm是有自己的smp_setup_processor_id函数，相当于上面说的普通全局符号，
+   // 这种情况下链接器就会忽略/init/main.c中的这个函数。
+   // 而在x86架构，这时smp_setup_processor_id为空
 }
 
 void __init __weak thread_info_cache_init(void)
@@ -522,6 +535,8 @@ asmlinkage void __init start_kernel(void)
 	char * command_line;
 	extern struct kernel_param __start___param[], __stop___param[];
 
+   // 当只有一个CPU的时候，这个函数什么都不做，
+   // 如果有多个CPU他就返回再启动的时候的那个CPU的ID
 	smp_setup_processor_id();
 
 	/*
@@ -538,23 +553,33 @@ asmlinkage void __init start_kernel(void)
 
 	cgroup_init_early();
 
+   // 关闭当前CPU的中断
 	local_irq_disable();
 	early_boot_irqs_off();
+   // 每一个中断都有一个中断描述符（struct irq_desc）来进行描述，
+   // 这个函数的作用就是设置所有中断描述符的锁
 	early_init_irq_lock_class();
 
 /*
  * Interrupts are still disabled. Do necessary setups, then
  * enable them
  */
+   // 获取大内核所，锁定整个内核
 	lock_kernel();
+   // 如果定义了CONFIG_GENERIC_CLOCKEVENTS，则注册clockevents框架
 	tick_init();
 	boot_cpu_init();
+   // 初始化地址，使用链表将其链接起来
 	page_address_init();
+   // 显示内核的版本信息
 	printk(KERN_NOTICE "%s", linux_banner);
+   // 每种体系结构都有自己的setup_arch函数，是体系结构相关的，
+   // 具体编译哪个函数，由源码树的顶层目录Makefile中的ARCH变量决定
 	setup_arch(&command_line);
 	mm_init_owner(&init_mm, &init_task);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
+   // 每个CPU分配per-CPU结构内存，并复制.data.percpu段的数据
 	setup_per_cpu_areas();
 	smp_prepare_boot_cpu();	/* arch-specific boot-cpu hooks */
 
@@ -812,21 +837,35 @@ static noinline int init_post(void)
 {
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
+   // 内核初始化已经接近尾声，所有的初始化函数都已经被调用
+   // 因此，free_initmem可以舍弃内存的__init_begin至__init_end（包括.init.setup、.initcall.init等节）之间的数据
+   // 所有使用__init标记过的函数和使用__initdata标记过的数据，在此之后都不能使用。
+   // 它们曾经获得的内存可以重新用于其他的目的
 	free_initmem();
 	unlock_kernel();
 	mark_rodata_ro();
 	system_state = SYSTEM_RUNNING;
 	numa_default_policy();
 
+   // 打开控制台设备，这样init进程就拥有一个控制台
+   // 并可以从中读取输入信息，也可以向其中写入信息
+   // 不过实际上init进程除了打印错误信息以外，并不使用控制台，
+   // 但是如果调用的是shell或者其他需要交互的进程，那么就需要一个可以交互的输入源，
+   // 如果成功执行open，/dev/console即成为init的标准输入源（文件描述符0）
 	if (sys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
 		printk(KERN_WARNING "Warning: unable to open an initial console.\n");
 
+   // 调用dup打开/dev/console文件描述符两次。
+   // 这样控制台设备就可以供标准输出和标准错误使用（文件描述符1和2）
 	(void) sys_dup(0);
 	(void) sys_dup(0);
 
 	current->signal->flags |= SIGNAL_UNKILLABLE;
 
+   // 如果内核命令行中给出了到init进程的直接路径，这里就试图执行它
 	if (ramdisk_execute_command) {
+      // 调用kernel_execve函数
+      // 成功执行目标程序时并不返回，只有失败时，才能执行相关的表达式
 		run_init_process(ramdisk_execute_command);
 		printk(KERN_WARNING "Failed to execute %s\n",
 				ramdisk_execute_command);
@@ -843,11 +882,16 @@ static noinline int init_post(void)
 		printk(KERN_WARNING "Failed to execute %s.  Attempting "
 					"defaults...\n", execute_command);
 	}
+   // 按照可能性由高到低查找。成功执行则不返回，失败则找下一个。
 	run_init_process("/sbin/init");
 	run_init_process("/etc/init");
 	run_init_process("/bin/init");
+   // 上面三个地方都没有发现init，系统可能就此崩溃
+   // 试图建立一个交互的shell来代替，希望root用户可以修复这种错误并重启机器
 	run_init_process("/bin/sh");
 
+   // 前面的所有情况都失败了，调用panic
+   // 这样内核就会试图同步磁盘，确保其状态一致
 	panic("No init found.  Try passing init= option to kernel.");
 }
 

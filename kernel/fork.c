@@ -235,6 +235,9 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	if (!tsk)
 		return NULL;
 
+   // 内核栈的分配。
+   // Linux中进程均匀fork创建（init除外），在fork时即会创建相应的内核栈
+   // do_fork() -> copy_process() -> dup_task_struct()
 	ti = alloc_thread_info(tsk);
 	if (!ti) {
 		free_task_struct(tsk);
@@ -245,6 +248,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig)
 	if (err)
 		goto out;
 
+   // 设置新进程的内核栈（stack成员指向）为新分配的thread_info
 	tsk->stack = ti;
 
 	err = prop_local_init_single(&tsk->dirties);

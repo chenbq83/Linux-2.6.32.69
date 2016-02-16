@@ -59,5 +59,7 @@ void __init i386_start_kernel(void)
 	 * RAM in e820. All other memory is free game.
 	 */
 
+   // 进入体系结构无关的内核部分
+   // 内核的main函数
 	start_kernel();
 }
