@@ -182,9 +182,29 @@
 
 #endif
 
-#define __KERNEL_CS	(GDT_ENTRY_KERNEL_CS * 8)
+/*
+ * http://blog.csdn.net/erazy0/article/details/6457626
+ *
+ * 在x86保护模式下，段的信息（段基地址、长度、权限等等）即段描述符占8个字节。
+ * 这些信息无法直接存放在段寄存器（只有2字节）。
+ * 段描述符集中存放在GDT或LDT中，而段寄存器存放的是段描述符在GDT或LDT的索引
+ *
+ * Linux中逻辑地址等于线性地址。为什么？因为Linux所有的段（用户代码段/数据段、内核代码段/数据段）
+ * 的线性地址都是从0x00000000开始，长度4G，这样线性地址=逻辑地址+0x00000000
+ *
+ * Linux只用到了GDT，无论是用户任务还是内核任务，都没有用到LDT。
+ * GDT的第12和13项是内核代码段和内核数据段，第14和15项是用户代码段和用户数据段
+ * 它们的DPL分别是0和3
+ *
+ * http://blog.csdn.net/yunsongice/article/details/5220724
+ *
+ * 所有Linux进程仅仅使用四种段来对指令和数据寻址。
+ * 运行在用户态的进程使用所谓的用户代码段和用户数据段，
+ * 运行在内核态的所有Linux进程都使用同一对相同的段对指令和数据寻址：内核代码段和内核数据段
+ */
+#define __KERNEL_CS	(GDT_ENTRY_KERNEL_CS * 8)            // GDT的第12项，每项8字节，最低2位表示DPL=0
 #define __KERNEL_DS	(GDT_ENTRY_KERNEL_DS * 8)
-#define __USER_DS     (GDT_ENTRY_DEFAULT_USER_DS* 8 + 3)
+#define __USER_DS     (GDT_ENTRY_DEFAULT_USER_DS* 8 + 3)  // GDT的第14项，每项8字节，最低2位表示DPL=3
 #define __USER_CS     (GDT_ENTRY_DEFAULT_USER_CS* 8 + 3)
 #ifndef CONFIG_PARAVIRT
 #define get_kernel_rpl()  0

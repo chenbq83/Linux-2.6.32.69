@@ -1407,6 +1407,8 @@ struct task_struct {
 	unsigned long last_switch_count;
 #endif
 /* CPU-specific state of this task */
+   // thread成员用于保存进程上下文信息，包含主要寄存器信息，
+   // 在进程上下文切换（如调度）时使用，结构体中的sp0成员用于保存内核栈指针
 	struct thread_struct thread;
 /* filesystem information */
 	struct fs_struct *fs;

@@ -175,6 +175,10 @@ static inline void set_tssldt_descriptor(void *d, unsigned long addr,
 
 static inline void __set_tss_desc(unsigned cpu, unsigned int entry, void *addr)
 {
+   // 设置TSS段描述符，将GDT中TSS段描述符中的base地址设置为指定的addr，
+   // 即让TSS段指向指定的addr
+   
+   // 获取per-CPU的gdt（全局描述符表）
 	struct desc_struct *d = get_cpu_gdt_table(cpu);
 	tss_desc tss;
 

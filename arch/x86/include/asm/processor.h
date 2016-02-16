@@ -197,7 +197,9 @@ static inline void load_cr3(pgd_t *pgdir)
 /* This is the TSS defined by the hardware. */
 struct x86_hw_tss {
 	unsigned short		back_link, __blh;
+   // 内核态中的堆栈指针
 	unsigned long		sp0;
+   // ss0为内核态堆栈段寄存器
 	unsigned short		ss0, __ss0h;
 	unsigned long		sp1;
 	/* ss1 caches MSR_IA32_SYSENTER_CS: */
@@ -211,6 +213,7 @@ struct x86_hw_tss {
 	unsigned long		cx;
 	unsigned long		dx;
 	unsigned long		bx;
+   // 用户态堆栈指针
 	unsigned long		sp;
 	unsigned long		bp;
 	unsigned long		si;
@@ -251,6 +254,32 @@ struct x86_hw_tss {
 #define IO_BITMAP_OFFSET		offsetof(struct tss_struct, io_bitmap)
 #define INVALID_IO_BITMAP_OFFSET	0x8000
 
+/*
+ * http://blog.csdn.net/dog250/article/details/6203529
+ *
+ * TSS的作用举例：
+ * 保存不同特权级别下任务所使用的寄存器，特别重要的是esp。
+ * 因为比如中断后，涉及特权级切换时（一个任务切换），首先要切换栈，这个栈显然是内核栈，
+ * 那么如何找到该栈的地址呢？这就需要从TSS段中得到。
+ * 只要涉及低特权环到高特权环的任务切换，都需要找到高特权环对应的栈，因此需要esp2、esp1、esp0起码三个esp，
+ * 当然Linux只用到esp0
+ *
+ * TSS是什么？
+ * TSS是一个段，段是x86的概念，在保护模式下，段选择符参与寻址，段选择符在段寄存器中，而TSS段则在TR寄存器中。
+ *
+ * INTEL建议：
+ * 为每一个进程准备一个独立的TSS段，进程切换的时候切换TR寄存器使之指向进程对应的TSS段，
+ * 然后在任务切换时（比如涉及特权级切换的中断）使用该段保存所有的寄存器。
+ *
+ * Linux的做法：
+ * 1. 没有为每一个进程准备一个TSS段，而是每一个CPU使用一个TSS段，TR寄存器保存该段。
+ *    进程切换时，只更新唯一TSS段中的esp0字段到新进程的内核栈。
+ * 2. Linux的TSS段中只使用esp0和iomap等字段，不同它来保存寄存器。
+ *    在一个用户进程被中断进入ring0的时候，TSS中取出esp0，然后切到esp0，其他的寄存器则保存
+ *    在esp0指示的内核栈上而不是保存在TSS中。
+ * 3. 结果，Linux中每一个CPU只有一个TSS段，TR寄存器永远指向它。
+ *    符合x86处理器的使用规范，但不遵守Intel的建议，这样的结果是开消更小了，因为不必切换TR寄存器了。
+ */
 struct tss_struct {
 	/*
 	 * The hardware state:
@@ -425,6 +454,8 @@ extern struct kmem_cache *task_xstate_cachep;
 struct thread_struct {
 	/* Cached TLS descriptors: */
 	struct desc_struct	tls_array[GDT_ENTRY_TLS_ENTRIES];
+   // 内核堆栈（与thread_info放在一起，共享thread_union联合体，大小8K）的指针。
+   // TSS中有相应的字段，在特权级发生变化时，硬件会自动从TSS中读取sp0，并进行堆栈切换。
 	unsigned long		sp0;
 	unsigned long		sp;
 #ifdef CONFIG_X86_32
@@ -554,6 +585,7 @@ static inline void native_set_iopl_mask(unsigned mask)
 static inline void
 native_load_sp0(struct tss_struct *tss, struct thread_struct *thread)
 {
+   // 将thread中的内核栈指针赋给TSS中的相应字段
 	tss->x86_tss.sp0 = thread->sp0;
 #ifdef CONFIG_X86_32
 	/* Only happens when SEP is enabled, no need to test "SEP"arately: */

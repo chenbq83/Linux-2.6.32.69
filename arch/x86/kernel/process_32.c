@@ -374,7 +374,14 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 		prefetch(next->xstate);
 
 	/*
+    * TSS中内核栈（sp0）的切换
+    * 由于Linux的具体实现中，TSS不是针对每个进程，而是针对每个CPU的，即每个CPU对应一个tss_struct，
+    * 那在进程上下文切换的时候，需要考虑当前CPU上TSS中的内容的更新，其实就是内核栈指针的更新。
+    * 更新后，当新进程再次进入内核态执行时，才能确保CPU硬件能从TSS中自动读取到正确的内核栈指针（sp0）
+    * 的值，以保证从用户态切换到内核态时，相应的堆栈切换正常。
+    *
 	 * Reload esp0.
+    * 将next进程的内核指针栈指针（next_p->thread->sp0)值更新到当前CPU的TSS中
 	 */
 	load_sp0(tss, next);
 

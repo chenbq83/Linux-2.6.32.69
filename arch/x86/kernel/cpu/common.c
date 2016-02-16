@@ -1199,8 +1199,10 @@ void __cpuinit cpu_init(void)
 
 void __cpuinit cpu_init(void)
 {
+   // 获取当前cpu ID
 	int cpu = smp_processor_id();
 	struct task_struct *curr = current;
+   // 当前cpu使用的tss
 	struct tss_struct *t = &per_cpu(init_tss, cpu);
 	struct thread_struct *thread = &curr->thread;
 
