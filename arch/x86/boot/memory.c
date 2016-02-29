@@ -45,6 +45,31 @@ static int detect_memory_e820(void)
 	 */
 
 	do {
+      /*
+       * http://blog.chinaunix.net/uid-26859697-id-4390055.html
+       *
+       * 循环调用BIOS的0x15中断的功能。 0x15是中断向量，输入参数是ireg，输出参数是oreg
+       * ireg.ax赋值为0xe820（这就是著名的e820的由来）
+       * 所谓的e820是指在x86的机器上，由BIOS提供的0x15中断去获取内存布局，
+       * 其中中断调用时，AX寄存器必须为0xe820，中断调用后将返回被BIOS保留内存地址范围
+       * 以及系统可以使用的内存地址范围。
+       * 所有通过中断获取的数据将会填充在boot_params.e820_map中，也就是著名的e820图了。
+       *
+       * 输入：
+       * EAX=0xe820
+       * EBX 用来表示读取信息的index，初始值为0，中断后返回该寄存器用来下次要获取的信号的序号
+       * ES:DI 用来保存信息的buffer地址
+       * ECX buffer空间的大小
+       * EDX 入参签名，必须为SMAP
+       *
+       * 输出：
+       * CF 如果flag寄存器中的CF被置位表示调用出错
+       * EAX 用来返回SMAP，否则表示出错
+       * ES:DI 对应的buffer，里面存放获取到的信息
+       * ECX BIOS在buffer中存放数据的大小
+       * EBX BIOS返回的下次调用的序号，如果返回0，则表示无后续信息
+       */
+      
 		intcall(0x15, &ireg, &oreg);
 		ireg.ebx = oreg.ebx; /* for next iteration... */
 
@@ -52,6 +77,7 @@ static int detect_memory_e820(void)
 		   to %ebx = 0 don't always report the SMAP signature on
 		   the final, failing, probe. */
 		if (oreg.eflags & X86_EFLAGS_CF)
+         // EFLAGS中的CF被置位，表示调用出错
 			break;
 
 		/* Some BIOSes stop returning SMAP in the middle of
@@ -60,6 +86,7 @@ static int detect_memory_e820(void)
 		   partial map, the full map, or complete garbage, so
 		   just return failure. */
 		if (oreg.eax != SMAP) {
+         // EAX必须返回SMAP，否则表示出错
 			count = 0;
 			break;
 		}
@@ -67,6 +94,8 @@ static int detect_memory_e820(void)
 		*desc++ = buf;
 		count++;
 	} while (ireg.ebx && count < ARRAY_SIZE(boot_params.e820_map));
+   // EBX返回的是下次调用的序号，如果为0，表示无后续信息
+   // 或者是，读取的信息已经填满了e820_map
 
 	return boot_params.e820_entries = count;
 }
@@ -119,10 +148,14 @@ static int detect_memory_88(void)
 	return -(oreg.eflags & X86_EFLAGS_CF); /* 0 or -1 */
 }
 
+// 实模式下探测物理内存布局
+// 此时尚未进入保护模式
 int detect_memory(void)
 {
 	int err = -1;
 
+   // 较新的电脑（？）调用detect_memory_e820足以探测内存布局
+   // detect_memory_e801和detect_memory_88是针对较老的电脑进行兼容而保留的
 	if (detect_memory_e820() > 0)
 		err = 0;
 

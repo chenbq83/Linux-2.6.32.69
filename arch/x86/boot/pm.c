@@ -69,12 +69,15 @@ static void setup_gdt(void)
 	   being 8-byte unaligned.  Intel recommends 16 byte alignment. */
 	static const u64 boot_gdt[] __attribute__((aligned(16))) = {
 		/* CS: code, read/execute, 4 GB, base 0 */
+      // 第2项，代码段，段基址0，长度4GB
 		[GDT_ENTRY_BOOT_CS] = GDT_ENTRY(0xc09b, 0, 0xfffff),
 		/* DS: data, read/write, 4 GB, base 0 */
+      // 第3项，数据段，段基址0，长度4GB
 		[GDT_ENTRY_BOOT_DS] = GDT_ENTRY(0xc093, 0, 0xfffff),
 		/* TSS: 32-bit tss, 104 bytes, base 4096 */
 		/* We only have a TSS here to keep Intel VT happy;
 		   we don't actually use it for anything. */
+      // 用不到
 		[GDT_ENTRY_BOOT_TSS] = GDT_ENTRY(0x0089, 4096, 103),
 	};
 	/* Xen HVM incorrectly stores a pointer to the gdt_ptr, instead
@@ -83,6 +86,8 @@ static void setup_gdt(void)
 	   proper kernel GDT. */
 	static struct gdt_ptr gdt;
 
+   // boot_gdt是定义了段描述符表，然后设置gdt，通过汇编指令lgdtl把gdt赋给gdtr寄存器
+   // 随后还需要开启保护模式功能
 	gdt.len = sizeof(boot_gdt)-1;
 	gdt.ptr = (u32)&boot_gdt + (ds() << 4);
 
@@ -91,15 +96,21 @@ static void setup_gdt(void)
 
 /*
  * Set up the IDT
+ * 进入保护模式前IDT表的初始化
  */
 static void setup_idt(void)
 {
+   // 纯粹设置一个idt为空的描述符表
 	static const struct gdt_ptr null_idt = {0, 0};
 	asm volatile("lidtl %0" : : "m" (null_idt));
 }
 
 /*
  * Actual invocation sequence
+ * 1. 要有一个段描述符表
+ * 2. GDTR寄存器指向该描述符表的首地址
+ * 3. 设置段寄存器以便查找段描述符
+ * 4. 开启保护模式功能
  */
 void go_to_protected_mode(void)
 {

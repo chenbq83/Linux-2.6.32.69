@@ -16,8 +16,10 @@
 #define __PAGE_OFFSET		_AC(CONFIG_PAGE_OFFSET, UL)
 
 #ifdef CONFIG_4KSTACKS
+// 如果配置了使用4Kbytes的内核栈，order置为0，2的0次方个页面
 #define THREAD_ORDER	0
 #else
+// 否则使用8Kbytes的内核栈，order置为1，2的1次方个页面
 #define THREAD_ORDER	1
 #endif
 #define THREAD_SIZE 	(PAGE_SIZE << THREAD_ORDER)

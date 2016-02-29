@@ -50,6 +50,19 @@
 
 #ifndef __ASSEMBLY__
 #include <linux/types.h>
+/*
+ * 从BIOS 0x15中断读取到的信息
+ * Offset in bytes   Name           Desc
+ *               0   BaseAddrLow    Low 32 bits of Base Address
+ *               4   BaseAddrHigh   High 32 bits of Base Address
+ *               8   LengthLow      Low 32 bits of Length in Bytes
+ *              12   LengthHigh     High 32 bits of Length in Bytes
+ *              16   Type           Address type of this Length
+ * 类型含义：
+ * 1：AddressRangeMemory  This run is available RAM usable by the OS
+ * 2: AddressRangeReserved  IN use or reserved by the system, MUST not used by OS
+ * Other: Undifined
+ */
 struct e820entry {
 	__u64 addr;	/* start of memory segment */
 	__u64 size;	/* size of memory segment */

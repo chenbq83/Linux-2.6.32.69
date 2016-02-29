@@ -2631,6 +2631,8 @@ static void build_zonelists(pg_data_t *pgdat)
 	enum zone_type i;
 	nodemask_t used_mask;
 	int local_node, prev_node;
+   // zonelist是一个指针数组，这个数组里面的每一个成员都是一个struct zone
+   // 最多可以容纳整个系统的所有页区数
 	struct zonelist *zonelist;
 	int order = current_zonelist_order;
 
@@ -3988,6 +3990,8 @@ void __init add_active_range(unsigned int nid, unsigned long start_pfn,
 
 	/* Merge with existing active regions if possible */
 	for (i = 0; i < nr_nodemap_entries; i++) {
+      // 检查start_pfn和end_pfn是否与early_node_map[]的某个元素重合
+      // 如果有重合，则返回
 		if (early_node_map[i].nid != nid)
 			continue;
 

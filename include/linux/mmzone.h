@@ -654,18 +654,30 @@ extern struct page *mem_map;
  * 内核里以struct pglist_data数据结构来表示单个内存节点。
  * 对于NUMA模型，多个内存节点通过链表串联起来。
  * UMA模型因为只有一个内存节点，因而不存在这样的链表
+ *
+ * 在VM中首要的普遍概念就是非一致内存访问（NUMA）。
+ * 对于大型机器而言，内存会分成很多簇，依据簇与处理器”距离“的不同，访问不同的簇会有不同的代价。
+ * 每个簇都被认为是一个节点，struct pg_data_t体现了这一概念，即便在一致内存访问（UMA）体系结构
+ * 中亦是如此。
  */
 struct bootmem_data;
 typedef struct pglist_data {
+   // 该节点所在管理区为ZONE_HIGHMEM, ZONE_NORMAL和ZONE_DMA。
 	struct zone node_zones[MAX_NR_ZONES];
+   // 按分配时的管理区顺序排列
 	struct zonelist node_zonelists[MAX_ZONELISTS];
+   // 表示该节点中的管理区数目，在1到3之间。
+   // 并不是所有的节点都有3个管理区，比如可能没有ZONE_DMA
 	int nr_zones;
 #ifdef CONFIG_FLAT_NODE_MEM_MAP	/* means !SPARSEMEM */
+   // 指struct page数组中的第一个页面，代表该节点中的每个物理帧。
+   // 它被放置在全局mem_map数组中。
 	struct page *node_mem_map;
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
 	struct page_cgroup *node_page_cgroup;
 #endif
 #endif
+   // 指向内存引导程序
 	struct bootmem_data *bdata;
 #ifdef CONFIG_MEMORY_HOTPLUG
 	/*
@@ -681,6 +693,7 @@ typedef struct pglist_data {
 	unsigned long node_present_pages; /* total number of physical pages */
 	unsigned long node_spanned_pages; /* total size of physical page
 					     range, including holes */
+   // 节点的ID号，从0开始
 	int node_id;
 	wait_queue_head_t kswapd_wait;
 	struct task_struct *kswapd;

@@ -92,6 +92,7 @@ static void enable_a20_bios(void)
 {
 	struct biosregs ireg;
 
+   // 通过调用BIOS的0x15中断尝试把A20开启
 	initregs(&ireg);
 	ireg.ax = 0x2401;
 	intcall(0x15, &ireg, NULL);
@@ -127,6 +128,18 @@ static void enable_a20_fast(void)
 
 #define A20_ENABLE_LOOPS 255	/* Number of times to try */
 
+/*
+ * http://blog.chinaunix.net/uid-26859697-id-4408665.html
+ *
+ * 实模式下，线性地址=段地址*16+偏移地址
+ * 当段地址和偏移地址均为0xFFFF时，可以访问的最大地址值为0x10FFEF，而实际上实模式仅能够
+ * 访问到1M的内存空间而已，因此从0x100000到0x10FFEF的内存空间实际上是0x0到0xFFEF
+ *
+ * 在Intel 80286的时候，已经不再是20根地址线了，而是升级为24根地址线，可以访问16M
+ * 为了兼容实模式，Intel设计了一个开关，这就是A20 Gate（指处理器上的A20线）
+ * 当A20 Gate开启时，则访问0x100000到0x10FFEF的内存空间时是真真切切地访问了这块内存区域；
+ * 当A20 Gate关闭时，则是仿8086的内存模式，访问0x0到0xFFEF的内存区域
+ */
 int enable_a20(void)
 {
        int loops = A20_ENABLE_LOOPS;
@@ -135,6 +148,7 @@ int enable_a20(void)
        while (loops--) {
 	       /* First, check to see if A20 is already enabled
 		  (legacy free, etc.) */
+          // 检测A20是否已经开启，如果是，直接返回0表示成功
 	       if (a20_test_short())
 		       return 0;
 	       
@@ -144,6 +158,9 @@ int enable_a20(void)
 		       return 0;
 	       
 	       /* Try enabling A20 through the keyboard controller */
+          // 通过操作键盘控制器的状态寄存器尝试把A20开启
+          // 早期IBM为了解决80286兼容8086的内存访问模式，他们利用键盘控制器上空余的
+          // 一些输出线来管理A20，这里应该就是针对这种情况
 	       kbc_err = empty_8042();
 
 	       if (a20_test_short())
@@ -156,6 +173,7 @@ int enable_a20(void)
 	       }
 	       
 	       /* Finally, try enabling the "fast A20 gate" */
+          // 通过操作主板控制权寄存器来尝试开启
 	       enable_a20_fast();
 	       if (a20_test_long())
 		       return 0;

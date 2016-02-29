@@ -1107,11 +1107,16 @@ u64 __init early_reserve_e820(u64 startt, u64 sizet, u64 align)
 
 /*
  * Find the highest page frame number we have available
+ * 查找最大物理的页面帧号，通过对e820图的内存块信息得到内存块的起始地址，
+ * 将起始地址右移PAGE_SHIFT，算出其起始地址对应的页面帧号，如果足够大，
+ * 超出了limit_pfn则设置最大页面帧号为limit_pfn，否则设置为遍历找到的最大的
+ * last_pfn
  */
 static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 {
 	int i;
 	unsigned long last_pfn = 0;
+   // 取决于是否配置了PAE，如果是，系统可以访问64Gb内存（36bit），否则访问4Gb（32bit）
 	unsigned long max_arch_pfn = MAX_ARCH_PFN;
 
 	for (i = 0; i < e820.nr_map; i++) {
@@ -1122,11 +1127,15 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 		if (ei->type != type)
 			continue;
 
+      // PAGE_SHIFT为12
+      // 计算得到当前这个e820entry的start页框号和end页框号
 		start_pfn = ei->addr >> PAGE_SHIFT;
 		end_pfn = (ei->addr + ei->size) >> PAGE_SHIFT;
 
+      // 如果start页框号已经大于limit_pfn，退出
 		if (start_pfn >= limit_pfn)
 			continue;
+      // end页框号大于limit_pfn
 		if (end_pfn > limit_pfn) {
 			last_pfn = limit_pfn;
 			break;
@@ -1144,6 +1153,9 @@ static unsigned long __init e820_end_pfn(unsigned long limit_pfn, unsigned type)
 }
 unsigned long __init e820_end_of_ram_pfn(void)
 {
+   // 入参MAX_ARCH_PFN的定义（x86 32bit的环境）为1ULL<<(32-PAGE_SHIFT)
+   // 最终值为0x100000，它表示4G物理内存的最大页面帧号。
+   // E820_RAM为1
 	return e820_end_pfn(MAX_ARCH_PFN, E820_RAM);
 }
 
@@ -1163,6 +1175,7 @@ int __init e820_find_active_region(const struct e820entry *ei,
 {
 	u64 align = PAGE_SIZE;
 
+   // 计算e820.map[i]元素的起始和结束页框的页号
 	*ei_startpfn = round_up(ei->addr, align) >> PAGE_SHIFT;
 	*ei_endpfn = round_down(ei->addr + ei->size, align) >> PAGE_SHIFT;
 
@@ -1196,6 +1209,7 @@ void __init e820_register_active_regions(int nid, unsigned long start_pfn,
 		if (e820_find_active_region(&e820.map[i],
 					    start_pfn, last_pfn,
 					    &ei_startpfn, &ei_endpfn))
+         // nid在initmem_init传入的是0，表示0号NODE
 			add_active_range(nid, ei_startpfn, ei_endpfn);
 }
 

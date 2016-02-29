@@ -24,8 +24,10 @@
  * void protected_mode_jump(u32 entrypoint, u32 bootparams);
  */
 GLOBAL(protected_mode_jump)
+   # 把入参boot_params的地址保存到esi中，以备后用
 	movl	%edx, %esi		# Pointer to boot_params table
 
+   # 清空ebx
 	xorl	%ebx, %ebx
 	movw	%cs, %bx
 	shll	$4, %ebx
@@ -36,11 +38,16 @@ GLOBAL(protected_mode_jump)
 	movw	$__BOOT_DS, %cx
 	movw	$__BOOT_TSS, %di
 
+   # 将cr0的值暂存到edx中，然后将edx对应的cr0的PE位进行设置，最后把edx设置到cr0上。
+   # 至此，随着cr0的PE被置位将保护模式开启
+
 	movl	%cr0, %edx
 	orb	$X86_CR0_PE, %dl	# Protected mode
 	movl	%edx, %cr0
 
 	# Transition to 32-bit mode
+   # 保护模式开启后就到了这里。这里的数据构造成了一个长跳转指令。
+   # 跳转的目的地址是"__BOOT_CS:in_pm32也就是将会跳转到GLOGAL(in_pm32)去执行
 	.byte	0x66, 0xea		# ljmpl opcode
 2:	.long	in_pm32			# offset
 	.word	__BOOT_CS		# segment
@@ -50,6 +57,7 @@ ENDPROC(protected_mode_jump)
 	.section ".text32","ax"
 GLOBAL(in_pm32)
 	# Set up data segments for flat 32-bit mode
+   # cx保存的是__BOOT_DS
 	movl	%ecx, %ds
 	movl	%ecx, %es
 	movl	%ecx, %fs

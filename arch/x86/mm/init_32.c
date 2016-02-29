@@ -691,6 +691,7 @@ void __init highmem_pfn_init(void)
 
 /*
  * Determine low and high memory ranges:
+ * 查找低端内存的最大页面数
  */
 void __init find_low_pfn_range(void)
 {
@@ -710,6 +711,7 @@ void __init initmem_init(unsigned long start_pfn,
 	highstart_pfn = highend_pfn = max_pfn;
 	if (max_pfn > max_low_pfn)
 		highstart_pfn = max_low_pfn;
+   // 设置early_node_map[]
 	e820_register_active_regions(0, 0, highend_pfn);
 	sparse_memory_present_with_active_regions(0);
 	printk(KERN_NOTICE "%ldMB HIGHMEM available.\n",
@@ -938,6 +940,7 @@ void __init mem_init(void)
 	BUILD_BUG_ON(PKMAP_BASE + LAST_PKMAP*PAGE_SIZE	> FIXADDR_START);
 	BUILD_BUG_ON(VMALLOC_END			> PKMAP_BASE);
 #endif
+// 怎么计算？
 #define high_memory (-128UL << 20)
 	BUILD_BUG_ON(VMALLOC_START			>= VMALLOC_END);
 #undef high_memory
