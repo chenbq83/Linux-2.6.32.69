@@ -158,6 +158,10 @@ ipt_local_hook(unsigned int hook,
 	return ret;
 }
 
+// mangle表
+// 用于对数据包的修改，诸如修改数据包的TOS、TTL等字段。
+// 同时该表还会对数据包打上一些特殊的标签以便结合TC等工具，实现如Qos等功能。
+// 该表监视所有的hook点。
 static struct nf_hook_ops ipt_ops[] __read_mostly = {
 	{
 		.hook		= ipt_pre_routing_hook,

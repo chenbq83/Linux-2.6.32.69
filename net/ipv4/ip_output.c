@@ -303,6 +303,13 @@ int ip_output(struct sk_buff *skb)
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
 
+   /*
+    * 注意这里的切入点是有条件宏NF_HOOK_COND。
+    * 调用该宏的条件是：如果协议栈当前所处理的数据包skb中没有重现路由的标记，数据包才会进入Netfilter框架。
+    * 否则，直接调用ip_finish_output函数走协议栈去处理。
+    * 除此之外，有条件宏和无条件宏再无其他任何差异。
+    * 如果陷入Netfilter框架，则数据包会在nf_hooks[2][4]过滤点进行匹配查找
+    */
 	return NF_HOOK_COND(PF_INET, NF_INET_POST_ROUTING, skb, NULL, dev,
 			    ip_finish_output,
 			    !(IPCB(skb)->flags & IPSKB_REROUTED));

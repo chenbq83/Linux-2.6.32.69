@@ -290,6 +290,11 @@ int ip_local_deliver(struct sk_buff *skb)
    // 处理重组之后的数据包
    // 调用ip_local_deliver_finish()完成IP协议层的传递
    // 但是注意：两者调用间有netfilter
+
+   /*
+    * 发给本机的数据包，首先全部回去nf_hooks[2][1]过滤点上检查是否有相关数据包的回调函数，
+    * 有则执行匹配和动作，最后根据返回值指向ip_local_deliver_finish函数
+    */
 	return NF_HOOK(PF_INET, NF_INET_LOCAL_IN, skb, skb->dev, NULL,
 		       ip_local_deliver_finish);
 }
@@ -486,6 +491,13 @@ int ip_rcv(struct sk_buff *skb, struct net_device *dev, struct packet_type *pt, 
 
 	/* Must drop socket now because of tproxy. */
 	skb_orphan(skb);
+
+   /*
+    * 如果协议栈当前收到了一个IP报文（PF_INET），那么就把这个报文传到Netfilter的NF_INET_PRE_ROUTING过滤点，
+    * 去检查在那个过滤点（nf_hooks[2][0]）是否已经有人注册了相关的用于处理数据包的钩子函数。
+    * 如果有，则挨个去遍历链表nf_hooks[2][0]去寻找匹配的match和相应的target，根据返回到Netfilter框架中的值
+    * 来进一步决定该如何处理该数据包（由钩子模块处理还是交由ip_rcv_finish函数继续处理）
+    */
 
    // 调用ip_rcv_finish继续IP层的处理。
    // ip_rcv()可以看成是查找路由前的IP层处理，

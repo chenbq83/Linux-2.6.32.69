@@ -42,8 +42,8 @@ struct compat_delta {
 
 struct xt_af {
 	struct mutex mutex;
-	struct list_head match;
-	struct list_head target;
+	struct list_head match;   // 每个match模块都会被注册到这里
+	struct list_head target;  // 每个target模块都会被注册到这里
 #ifdef CONFIG_COMPAT
 	struct mutex compat_mutex;
 	struct compat_delta *compat_offsets;
@@ -746,6 +746,7 @@ struct xt_table *xt_register_table(struct net *net,
 	struct xt_table *t, *table;
 
 	/* Don't add one object to multiple lists. */
+   // 申请xt_table内存
 	table = kmemdup(input_table, sizeof(struct xt_table), GFP_KERNEL);
 	if (!table) {
 		ret = -ENOMEM;
@@ -757,6 +758,7 @@ struct xt_table *xt_register_table(struct net *net,
 		goto out_free;
 
 	/* Don't autoload: we'd eat our tail... */
+   // 在命名空间里查找是否有相同名字的表
 	list_for_each_entry(t, &net->xt.tables[table->af], list) {
 		if (strcmp(t->name, table->name) == 0) {
 			ret = -EEXIST;
@@ -765,6 +767,7 @@ struct xt_table *xt_register_table(struct net *net,
 	}
 
 	/* Simplifies replace_table code. */
+   // 初始化table->private
 	table->private = bootstrap;
 
 	if (!xt_replace_table(table, 0, newinfo, &ret))
@@ -776,6 +779,7 @@ struct xt_table *xt_register_table(struct net *net,
 	/* save number of initial entries */
 	private->initial_entries = private->number;
 
+   // 把表挂到对应网络命名空间管理的链表上
 	list_add(&table->list, &net->xt.tables[table->af]);
 	mutex_unlock(&xt[table->af].mutex);
 	return table;

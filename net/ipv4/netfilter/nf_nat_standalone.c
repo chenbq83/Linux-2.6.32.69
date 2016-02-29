@@ -246,6 +246,14 @@ nf_nat_local_fn(unsigned int hooknum,
 
 /* We must be after connection tracking and before packet filtering. */
 
+/*
+ * nat表
+ * 主要用于DNAT和SNAT和地址伪装等操作，用于修改数据包的源、目的地址。
+ * nat表监视4个HOOK点：NF_INET_PRE_ROUTING、NF_INET_POST_ROUTING、NF_INET_LOCAL_IN、NF_INET_LOCAL_OUT。
+ * 但在真正的应用中，一般仅需在nat表的PRE_ROUTING和POST_ROUTING点上注册钩子函数。
+ * 该表有一个特性，只有新连接的第一个数据包会经过这个表，随后该连接的所有数据包都将按照第一个包的
+ * 处理动作做同样的操作，这种特性是由连接跟踪机制来实现的。
+ */
 static struct nf_hook_ops nf_nat_ops[] __read_mostly = {
 	/* Before packet filtering, change destination */
 	{

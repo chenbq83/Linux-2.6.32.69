@@ -114,6 +114,11 @@ int ip_forward(struct sk_buff *skb)
 
 	skb->priority = rt_tos2priority(iph->tos);
 
+   /*
+    * 在经过路由选择后，所有需要本机转发的报文都会交由ip_forward函数进行处理。
+    * 这里，该函数由NF_INET_FORWARD过滤点切入到Netfilter框架，在nf_hooks[2][2]过滤点执行匹配查找。
+    * 最后根据返回值来确定ip_forward_finish函数的执行情况
+    */
 	return NF_HOOK(PF_INET, NF_INET_FORWARD, skb, skb->dev, rt->u.dst.dev,
 		       ip_forward_finish);
 

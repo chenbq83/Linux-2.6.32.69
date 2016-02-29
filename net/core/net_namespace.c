@@ -15,7 +15,9 @@
  *	Our network namespace constructor/destructor lists
  */
 
+// 每一个新注册的网络协议模块都会添加该链表中
 static LIST_HEAD(pernet_list);
+// 所以要添加到网络命名空间的网络协议模块都会添加到链表first_device中。
 static struct list_head *first_device = &pernet_list;
 static DEFINE_MUTEX(net_mutex);
 
@@ -262,6 +264,9 @@ pure_initcall(net_ns_init);
 static int register_pernet_operations(struct list_head *list,
 				      struct pernet_operations *ops)
 {
+   // 遍历目前已存在的所有网络命名空间，将网络协议模块添加到
+   // 每一个网络命名空间中，并执行init操作，在每一个网络命名空间中，
+   // 执行协议初始化相关的操作（生成proc相关的文件或者为协议申请缓存等等）
 	struct net *net, *undo_net;
 	int error;
 
@@ -336,6 +341,16 @@ static DEFINE_IDA(net_generic_ids);
  *	When a network namespace is destroyed all of the exit methods
  *	are called in the reverse of the order with which they were
  *	registered.
+ *
+ *	register_pernet_subsys函数用来注册网络命名空间。
+ *	网络命名空间被创建或者注销时会分别调用pernet_operations结构体变量中的
+ *	初始化函数init和exit函数
+ *
+ *	http://blog.csdn.net/lickylin/article/details/18013879
+ *
+ *	该函数的主要作用是将一个网络协议模块添加到每一个网络命令空间中，然后再执行其ops->init程序
+ *	进行初始化，一般其ops->init会在其对应的proc目录下生成一个网络协议模块对应的proc文件或proc目录，
+ *	并执行一些协议初始化相关的函数
  */
 int register_pernet_subsys(struct pernet_operations *ops)
 {

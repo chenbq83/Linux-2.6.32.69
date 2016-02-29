@@ -98,6 +98,12 @@ ipt_local_out_hook(unsigned int hook,
 			    dev_net(out)->ipv4.iptable_filter);
 }
 
+// 包过滤子功能
+// filter表是整个过滤子系统中真正起“过滤”作用的地方。
+// 所有对数据包的过滤工作都在这个表里进行，也就是说用户如果需要对某种类型的数据包进行过滤拦截，
+// 那么最好在这个表中进行操作。
+// filter表在NF_INET_LOCAL_IN、NF_INET_FORWARD和NF_INET_LOCAL_OUT三个HOOK点注册钩子函数，
+// 也就是说，所有配置到filter表中的规则只可能在这三个过滤点上进行。
 static struct nf_hook_ops ipt_ops[] __read_mostly = {
 	{
 		.hook		= ipt_local_in_hook,
@@ -129,6 +135,13 @@ module_param(forward, bool, 0000);
 static int __net_init iptable_filter_net_init(struct net *net)
 {
 	/* Register table */
+   // 注册过滤表。Netfilter在内核中为防火墙系统维护了一个结构体，该结构体中存储的是内核中
+   // 当前可用的所有match、target和table，它们都是以双向链表的形式被组织起来的。
+   // 这个全局的结构体变量是static struct xt_af *xt
+
+   // ipt_register_table所做的事情就是从模板initial_table变量的repl成员里取出初始化数据，
+   // 然后申请一块内存并用repl里的值来初始化它，之后，将这块内存的首地址赋给packet filter表
+   // 的private成员，最后将packet filter挂载到xt[2].tables的双向链表中
 	net->ipv4.iptable_filter =
 		ipt_register_table(net, &packet_filter, &initial_table.repl);
 	if (IS_ERR(net->ipv4.iptable_filter))
@@ -150,6 +163,7 @@ static int __init iptable_filter_init(void)
 {
 	int ret;
 
+   // 这是什么意思？
 	if (forward < 0 || forward > NF_MAX_VERDICT) {
 		printk("iptables forward must be 0 or 1\n");
 		return -EINVAL;

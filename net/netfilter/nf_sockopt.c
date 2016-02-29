@@ -21,6 +21,7 @@ static inline int overlap(int min1, int max1, int min2, int max2)
 }
 
 /* Functions to register sockopt ranges (exclusive). */
+// 注册nf_sockopt_ops
 int nf_register_sockopt(struct nf_sockopt_ops *reg)
 {
 	struct nf_sockopt_ops *ops;
@@ -29,6 +30,7 @@ int nf_register_sockopt(struct nf_sockopt_ops *reg)
 	if (mutex_lock_interruptible(&nf_sockopt_mutex) != 0)
 		return -EINTR;
 
+   // 检查要注册的nf_sockopt_ops的命令字范围是否和已注册的重复
 	list_for_each_entry(ops, &nf_sockopts, list) {
 		if (ops->pf == reg->pf
 		    && (overlap(ops->set_optmin, ops->set_optmax,
@@ -45,6 +47,7 @@ int nf_register_sockopt(struct nf_sockopt_ops *reg)
 		}
 	}
 
+   // 把nf_sockopt_ops实例加入到Netfilter管理的全局链表nf_sockopts上
 	list_add(&reg->list, &nf_sockopts);
 out:
 	mutex_unlock(&nf_sockopt_mutex);
@@ -69,10 +72,12 @@ static struct nf_sockopt_ops *nf_sockopt_find(struct sock *sk, u_int8_t pf,
 		return ERR_PTR(-EINTR);
 
 	list_for_each_entry(ops, &nf_sockopts, list) {
+      // 协议要一样
 		if (ops->pf == pf) {
 			if (!try_module_get(ops->owner))
 				goto out_nosup;
 
+         // 命令字必须在对应的nf_sockopt_ops定义的范围内
 			if (get) {
 				if (val >= ops->get_optmin &&
 						val < ops->get_optmax)

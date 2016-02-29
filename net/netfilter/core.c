@@ -135,8 +135,10 @@ unsigned int nf_iterate(struct list_head *head,
 	 * function because of risk of continuing from deleted element.
 	 */
 	list_for_each_continue_rcu(*i, head) {
+      // list_head一定要放在nf_hook_ops的第一个字段，才能做强制类型转换
 		struct nf_hook_ops *elem = (struct nf_hook_ops *)*i;
 
+      // 如果钩子函数的优先级小于参数hook_thresh，则跳过
 		if (hook_thresh > elem->priority)
 			continue;
 
