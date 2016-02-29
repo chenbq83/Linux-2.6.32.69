@@ -1047,6 +1047,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int wakeup, bool head)
 		flags |= ENQUEUE_MIGRATE;
 
 	for_each_sched_entity(se) {
+      // 进程已经在就绪队列上，则无事可做。否则具体的工作委托给enqueue_entity完成
 		if (se->on_rq)
 			break;
 		cfs_rq = cfs_rq_of(se);

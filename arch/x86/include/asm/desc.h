@@ -371,6 +371,9 @@ static inline void alloc_intr_gate(unsigned int n, void *addr)
  * 以下函数设置中断描述符表idt_table的第n项
  * _set_gate的第二个参数对应于中断门或陷阱门格式中的D标志位加上类型位段。
  * 第四个参数对应于DPL位段。
+ *
+ * 除了任务门（Linux用不到），其他的门的段描述符都设置成内核代码段的选择符，
+ * 偏移地址设为addr
  */
 static inline void set_system_intr_gate(unsigned int n, void *addr)
 {

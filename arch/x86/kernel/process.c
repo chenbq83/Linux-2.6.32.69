@@ -216,6 +216,7 @@ void __switch_to_xtra(struct task_struct *prev_p, struct task_struct *next_p,
 
 int sys_fork(struct pt_regs *regs)
 {
+   // 唯一使用的标志是SIGCHLD，这意味着在子进程终止后发生SIGCHLD信号通知父进程
 	return do_fork(SIGCHLD, regs->sp, regs, 0, NULL, NULL);
 }
 

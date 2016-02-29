@@ -1050,6 +1050,11 @@ DEFINE_PER_CPU(struct orig_ist, orig_ist);
 
 #else	/* CONFIG_X86_64 */
 
+// 2.6.22之后，包括2.6.22版本，Linux将当前进程task_struct的地址保存于current_task中
+// current_task在两种情况下会被更新：
+// 1. 开机后current_task设置为init_task进程，该进程是所有进程的task_struct原型，并不是通过do_fork创建的
+// 2. 进程上下文切换的时候会设置current_task
+//    在上下文切换时会调用_switch_to()函数切换到下一个进程next_p，将next_p的task_struct地址保存到current_task
 DEFINE_PER_CPU(struct task_struct *, current_task) = &init_task;
 EXPORT_PER_CPU_SYMBOL(current_task);
 

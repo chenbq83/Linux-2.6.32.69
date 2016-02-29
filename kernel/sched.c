@@ -2993,6 +2993,26 @@ asmlinkage void schedule_tail(struct task_struct *prev)
 }
 
 /*
+ * 1. 上下文
+ * 一般来说，CPU在任何时刻都处于以下三种情况之一：
+ * （1）运行于用户空间，执行用户进程
+ * （2）运行于内核空间，处于进程上下文
+ * （3）运行于内核空间，处于中断上下文
+ * 应用程序通过系统调用陷入内核，此时处于进程上下文。
+ * 当外部设备产生中断，向CPU发送一个异步信号，CPU调用相应的中断处理程序来处理该中断，此时处于中断上下文。
+ *
+ * 在进程上下文中，可以通过current关联相应的任务。进程以进程上下文的形式运行于内核空间，可以发生睡眠，
+ * 所以在进程上下文中，可以使用信号量（semaphore）。实际上，内核经常在进程上下文中使用信号量来完成
+ * 任务间的同步，当然也可以使用锁。
+ *
+ * 中断上下文不属于任何进程，它与current没有任何关系（尽管此时current执行了被中断的进程）。
+ * 由于没有进程背景，在中断上下文中不能发生睡眠，否则又如何对它进行调度（等到current进程重新被调度？）
+ * 所以在中断上下文中只能用锁进行同步，正是这个原因，中断上下文也叫做原子上下文（atomic context）
+ * 在中断处理程序中，通过会禁止同一个中断，甚至会禁止整个本地中断，所以中断处理程序应该尽可能迅速，
+ * 所以又把中断处理分成上半部和下半部。
+ *
+ * 2. 上下文切换
+ * 上下文切换，也就是从一个可执行进程切换到另一个可执行进程，由context_switch函数完成。
  * context_switch - switch to the new MM and the new
  * thread's register state.
  */
@@ -3018,6 +3038,7 @@ context_switch(struct rq *rq, struct task_struct *prev,
 		atomic_inc(&oldmm->mm_count);
 		enter_lazy_tlb(oldmm, next);
 	} else
+      // 将虚拟内存映射到新的进程
 		switch_mm(oldmm, mm, next);
 
 	if (unlikely(!prev->mm)) {
@@ -3035,6 +3056,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 #endif
 
 	/* Here we just switch the register state and the stack. */
+   // 完成最终的进程切换，它保存原进程的所有寄存器信息，恢复新进程的所有寄存器信息，
+   // 并执行新的进
 	switch_to(prev, next, prev);
 
 	barrier();
@@ -5693,6 +5716,16 @@ pick_next_task(struct rq *rq)
 
 /*
  * schedule() is the main scheduler function.
+ *
+ * http://skcomputer405.blog.163.com/blog/static/2461630262015318454294/
+ *
+ * 进程调度的时机：
+ * 1. 中断处理过程（包括时钟中断、I/O中断、系统调用和异常）中，直接调用
+ *    schedule函数，或者返回用户态时根据need_resched标记调用schedule
+ * 2. 内核线程可以直接调用schedule进行进程切换，也可以在中断处理过程中进行
+ *    调度，也就是说，内核线程作为一类特殊的进程可以主动调度，也可以被动调度
+ * 3. 用户态进程无法实现主动调度，仅能通过陷入内核态后的某个时机点进行调度，
+ *    即在中断处理过程中进行调度
  */
 asmlinkage void __sched schedule(void)
 {
@@ -5742,6 +5775,7 @@ need_resched_nonpreemptible:
 		idle_balance(cpu, rq);
 
 	put_prev_task(rq, prev);
+   // 进程调度算法都封装在这个函数内部
 	next = pick_next_task(rq);
 
 	if (likely(prev != next)) {
@@ -5847,12 +5881,14 @@ asmlinkage void __sched preempt_schedule(void)
 	/*
 	 * If there is a non-zero preempt_count or interrupts are disabled,
 	 * we do not want to preempt the current task. Just return..
+    * 检查是否允许抢占，本地中断关闭，或者抢占计数器值不为0时不允许抢占
 	 */
 	if (likely(ti->preempt_count || irqs_disabled()))
 		return;
 
 	do {
 		add_preempt_count(PREEMPT_ACTIVE);
+      // 发生调度
 		schedule();
 		sub_preempt_count(PREEMPT_ACTIVE);
 

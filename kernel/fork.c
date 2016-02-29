@@ -221,6 +221,9 @@ int __attribute__((weak)) arch_dup_task_struct(struct task_struct *dst,
 	return 0;
 }
 
+// 复制父进程task_struct和thread_info实例的内容，但stack则与新的thread_info实例
+// 位于同一内存区域。这意味着父子进程的task_struct此时除了栈指针之外是完全相同的，
+// 但子进程的task_struct实例会在copy_process过程中修改
 static struct task_struct *dup_task_struct(struct task_struct *orig)
 {
 	struct task_struct *tsk;
@@ -996,6 +999,8 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	struct task_struct *p;
 	int cgroup_callbacks_done = 0;
 
+   // 某些标记组合没有意义，必须捕获这种情况。
+   // 比如，一方面请求创建一个新命名空间（CLONE_NEWNS），同时要求与父进程共享所有的文件系统信息（CLONE_FS）
 	if ((clone_flags & (CLONE_NEWNS|CLONE_FS)) == (CLONE_NEWNS|CLONE_FS))
 		return ERR_PTR(-EINVAL);
 
@@ -1003,6 +1008,8 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * Thread groups must share signals as well, and detached threads
 	 * can only be started up within the thread group.
 	 */
+   // 在用CLONE_THREAD创建一个线程时，必须用CLONE_SIGHAND激活信号共享。
+   // 通常情况下，一个信号无法发送到线程组中的各个线程。
 	if ((clone_flags & CLONE_THREAD) && !(clone_flags & CLONE_SIGHAND))
 		return ERR_PTR(-EINVAL);
 
@@ -1029,6 +1036,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 		goto fork_out;
 
 	retval = -ENOMEM;
+   // 建立父进程task_struct的副本。
+   // 用于子进程的新的task_struct实例可以在任何空闲的内核内存位置分配。
+   // 父子进程的task_struct实例只有一个成员不同：新进程分配了一个新的核心态栈，
+   // 即task_struct->stack
 	p = dup_task_struct(current);
 	if (!p)
 		goto fork_out;
@@ -1042,6 +1053,8 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	DEBUG_LOCKS_WARN_ON(!p->softirqs_enabled);
 #endif
 	retval = -EAGAIN;
+   // 检查当前的特定用户在创建新进程之后，是否超出了允许的最大进程数目
+   // 拥有当前进程的用户，其资源计数保存在一个user_struct实例中，当前持有进程的数目保存在user_struct->processes
 	if (atomic_read(&p->real_cred->user->processes) >=
 			p->signal->rlim[RLIMIT_NPROC].rlim_cur) {
 		if (!capable(CAP_SYS_ADMIN) && !capable(CAP_SYS_RESOURCE) &&
@@ -1370,6 +1383,24 @@ struct task_struct * __cpuinit fork_idle(int cpu)
  *
  * It copies the process, and if successful kick-starts
  * it and waits for it to finish using the VM if required.
+ *
+ * fork、vfork和clone系统调用的入口点分别是sys_fork、sys_vfork和sys_clone函数，
+ * 其定义依赖于具体的体系结构，因为在用户空间和内核空间之间传递参数的方法因体系结构而异。
+ * 上述函数的任务是从处理器寄存器中提取由用户空间提供的信息，调用体系结构无关的do_fork，
+ * 后者负责进程复制。
+ *
+ * 不同的fork变体，主要是通过标志集合区分。
+ *
+ * 参数：
+ * clone_flags：一个标志集合，用来指定控制复制过程的一些属性。
+ *   最低字节指定了在子进程终止时被发给父进程的信号号码。其余的高字节保存了各种常数
+ * stack_start：是用户状态下栈的起始地址
+ * regs：是一个指向寄存器集合的指针，其中以原始形式保存了调用参数。
+ *   该参数使用的数据类型是特定于体系结构的struct pt_regs，其中安装系统调用执行时寄存器
+ *   在内核栈上的存储顺序，保存了所有的寄存器
+ * stack_size：是用户状态下栈的大小。该参数通常是不必要的，设置为0
+ * parent_tidptr：
+ * child_tidptr：是指向用户空间中地址的两个指针，分别指向父子进程的TID
  */
 long do_fork(unsigned long clone_flags,
 	      unsigned long stack_start,
@@ -1420,6 +1451,7 @@ long do_fork(unsigned long clone_flags,
 	if (likely(user_mode(regs)))
 		trace = tracehook_prepare_clone(clone_flags);
 
+   // 调用copy_process执行生成新进程的实际工作，并根据指定的标志重用父进程的数据
 	p = copy_process(clone_flags, stack_start, regs, stack_size,
 			 child_tidptr, NULL, trace);
 	/*
@@ -1460,6 +1492,12 @@ long do_fork(unsigned long clone_flags,
 			set_tsk_thread_flag(p, TIF_SIGPENDING);
 			__set_task_state(p, TASK_STOPPED);
 		} else {
+         // 子进程使用wake_up_new_task唤醒，换言之，将其task_struct添加到调度器队列。
+         // 调度器也有机会对新启动的进程给予特别处理，这使得可以实现一种策略以便新进程有较高的几率尽快执行。
+         // 如果子进程在父进程之前开始执行，则可以大大地减少复制内存页的工作量，尤其是子进程在fork之后
+         // 发出exec调用的情况下。
+         // 但是要记住，将进程排到调度器数据结构中并不意味着该子进程可以立即执行，
+         // 而是调度器此时起可以选择它执行。
 			wake_up_new_task(p, clone_flags);
 		}
 
@@ -1467,6 +1505,11 @@ long do_fork(unsigned long clone_flags,
 						clone_flags, nr, p);
 
 		if (clone_flags & CLONE_VFORK) {
+         // 如果使用vfork机制，必须启用子进程的完成机制。
+         // 子进程的task_struct的vfork_done成员即用于该目的。借助于wait_for_completion函数，父进程在该变量上
+         // 进入睡眠状态，直至子进程退出。
+         // 在进程终止（或用execve启动新应用程序）时，内核自动调用complete（vfork_done）。这会唤醒所有
+         // 因该变量睡眠的进程。
 			freezer_do_not_count();
 			wait_for_completion(&vfork);
 			freezer_count();

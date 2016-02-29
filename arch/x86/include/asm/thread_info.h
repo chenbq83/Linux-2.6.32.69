@@ -27,6 +27,27 @@ struct exec_domain;
  * 线程描述符
  * 对于每一个进程，内核把它内核态的进程堆栈和进程对应的thread_info这两个数据结构紧凑地
  * 存放在一个单独为进程分配的内存区域内
+ *
+ * 为了支持内核抢占，内核引入了preempt_count字段，该计数初值为0，每当使用锁时加1，释放锁时减1。
+ * 当preempt_count为0时，表示内核可以被安全的抢占，大于0时，则禁止内核抢占。
+ * 该字段对应三个不同的计数器，也就是说在以下三种任何一种情况，该字段的值都会大于0：
+ * （1）内核执行中断处理程序，通过irq_enter增加中断计数器的值
+ * （2）可延迟函数被禁止（执行软中断和tasklet时经常如此，由local_bh_disable完成
+ * （3）通过把抢占计数器设置为正而显式禁止内核抢占，由preempt_disable完成。
+ *
+ * 当从中断返回内核空间时，内核会检查preempt_count和need_resched的值（返回用户空间只需要检查need_resched），
+ * 如查preempt_count为0且need_resched设置了，则调用scheduler函数，完成任务抢占，一般来说，内核抢占
+ * 发生在以下情况：
+ * （1）从中断（异常）返回时，preempt_count为0且need_resched置位
+ * （2）在异常处理程序中（特别是系统调用）调用preempt_enable来允许内核抢占发生
+ * （3）启用可延迟函数时，即调用local_bh_enable时发生
+ * （4）内核任务显式调用scheduler，属于内核自动放弃CPU
+ *
+ * preempt_count用来跟踪内核抢占和内核控制路径嵌套关键数据，其个位的含义如下：
+ * 0 ~ 7： preemption counter 内核抢占计数器（最大值255），用来表示内核抢占被关闭的次数，0表示可以抢占。
+ * 8 ~ 15： softirq counter 软中断计数器（最大值255），表示推迟函数（下半部）被关闭的次数，0表示推迟函数打开。
+ * 16 ~ 27： hardirq counter 硬件中断计数器（最大值4096），表示本地CPU中断嵌套的层数，irq_enter增加该值，irq_exit减该值
+ * 28： PREEMPT_ACTIVE标志
  */
 struct thread_info {
 	struct task_struct	*task;		/* main task structure */
@@ -180,11 +201,15 @@ struct thread_info {
 
 
 /* how to get the current stack pointer from C */
+// 堆栈指针ESP
 register unsigned long current_stack_pointer asm("esp") __used;
 
 /* how to get the thread information struct from C */
 static inline struct thread_info *current_thread_info(void)
 {
+   // THREAD_SIZE是8Kbytes的情况下~(THREAD_SIZE-1)=11...110 0000 0000 0000
+   // 也就是低13位是0
+   // 这里把ESP的低13位清零即可得到当前进程的thread_info指针
 	return (struct thread_info *)
 		(current_stack_pointer & ~(THREAD_SIZE - 1));
 }
