@@ -142,6 +142,7 @@ void __init init_ISA_irqs(void)
 
 void __init init_IRQ(void)
 {
+   // 调用native_init_IRQ()
 	x86_init.irqs.intr_init();
 }
 
@@ -215,21 +216,41 @@ static void __init apic_intr_init(void)
 #endif
 }
 
+/*
+ * http://www.cnblogs.com/hustcat/archive/2009/08/11/1543889.html
+ *
+ * Linux对256个中断向量的分配如下：
+ * 0 - 31：异常和非屏蔽中断，实际上被Intel保留
+ * 32 - 47：可屏蔽中断
+ * 48 - 255：用来标识软中断。Linux只用了其中一个，即128(0x80)，用来实现系统调用
+ *
+ * 可屏蔽中断：
+ * x86通过两个级联的8259A中断控制器来管理15个外部中断源
+ * 外部设备要使用中断线，首先要申请中断号（IRQ），每条中断线的中断号IRQn对应的中断向量为n+32，
+ * IRQ和向量之间的映射可以通过中断控制器端口来修改。
+ * x86下8259A的初始化工作及IRQ与向量的映射关系在函数init_8259A()完成
+ */
 void __init native_init_IRQ(void)
 {
 	int i;
 
 	/* Execute any quirks before the call gates are initialised: */
+   // 初始化8259A PIC中断控制器相关的数据结构
 	x86_init.irqs.pre_vector_init();
 
+   // 初始化SMP的APIC中断门描述符
 	apic_intr_init();
 
+   // 在这里进行遍历所有的中断门，将所有还没有配置的中断门进行统一配置。
+   // interrupt函数指针数组，当发生中断的时候将会触发这个interrupt函数，
+   // 然后所有的interrupt都会调用do_IRQ，从而触发真正的中断服务程序
 	/*
 	 * Cover the whole vector space, no vector can escape
 	 * us. (some of these will be overridden and become
 	 * 'special' SMP interrupts)
 	 */
    // 更新外部中断（IRQ）的IDT表项
+   // FIRST_EXTERNAL_VECTOR=0x20, NR_VECTORS=256
 	for (i = FIRST_EXTERNAL_VECTOR; i < NR_VECTORS; i++) {
 		/* IA32_SYSCALL_VECTOR could be used in trap_init already. */
       // 跳过系统调用（trap）使用过的槽位
@@ -237,7 +258,7 @@ void __init native_init_IRQ(void)
          // 在IDT的第i个表项插入一个中断门。
          // 门中的段选择符设置为内核代码的段选择符，基偏移量为中断处理程序的地址
          // 即第二个参数
-         // interrupt数组在entry_32.S中定义，它本质上都会跳转到common_interrupt（在哪里定义？）
+         // interrupt数组在entry_32.S中定义，它本质上都会跳转到common_interrupt
 			set_intr_gate(i, interrupt[i-FIRST_EXTERNAL_VECTOR]);
 	}
 

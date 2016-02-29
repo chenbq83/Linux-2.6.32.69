@@ -346,6 +346,13 @@ END(ret_from_fork)
  * but we want the default path for a system call return to
  * go as quickly as possible which is why some of this is
  * less clear than it otherwise should be.
+ *
+ * 当内核从中断返回时，应当考虑以下几种情况：
+   （1）内核控制路径并发执行的数量，如果为1，则CPU返回用户态
+   （2）挂起进程的切换请求，如果有挂起请求，则进行调度；否则，返回被中断的进程
+   （3）待处理信号，如果有信号发送给当前进程，则必须进行信号处理
+   （4）单步调试模式，如果调试器正在跟踪当前进程，在返回用户态时必须恢复单步模式
+   （5）Virtual-8086模式，如果中断时CPU处于该模式，则进行特殊的处理
  */
 
 	# userspace resumption stub bypassing syscall exit tracing
@@ -358,10 +365,12 @@ ret_from_intr:
 check_userspace:
 	movl PT_EFLAGS(%esp), %eax	# mix EFLAGS and CS
 	movb PT_CS(%esp), %al
-	andl $(X86_EFLAGS_VM | SEGMENT_RPL_MASK), %eax
+	andl $(X86_EFLAGS_VM | SEGMENT_RPL_MASK), %eax #是否运行在VM86模式或者用户态
 	cmpl $USER_RPL, %eax
 	jb resume_kernel		# not returning to v8086 or userspace
 
+/* 返回用户空间，只需要检查need_resched */
+/* 当中断或异常发生时，任务处于用户空间 */
 ENTRY(resume_userspace)
 	LOCKDEP_SYS_EXIT
  	DISABLE_INTERRUPTS(CLBR_ANY)	# make sure we don't miss an interrupt
@@ -371,8 +380,8 @@ ENTRY(resume_userspace)
 	movl TI_flags(%ebp), %ecx
 	andl $_TIF_WORK_MASK, %ecx	# is there any work to be done on
 					# int/exception return?
-	jne work_pending
-	jmp restore_all
+	jne work_pending # 还有其他工作要做
+	jmp restore_all  # 所有工作都做完，则恢复处理器状态
 END(ret_from_exception)
 
 #ifdef CONFIG_PREEMPT
@@ -542,7 +551,8 @@ syscall_call:              # 合法则跳转到相应系统调用号所对应的
                            # 也就是sys_call_table表中找到相应的函数入口
 	call *sys_call_table(,%eax,4) # 每个表项4个字节，表的基地址+%eax*4
 syscall_after_call:
-	movl %eax,PT_EAX(%esp)		# store the return value
+	movl %eax,PT_EAX(%esp)		# store the return value 返回值保存到eax
+# 系统调用返回
 syscall_exit:
 	LOCKDEP_SYS_EXIT
 	DISABLE_INTERRUPTS(CLBR_ANY)	# make sure we don't miss an interrupt
@@ -550,7 +560,7 @@ syscall_exit:
 					# between sampling and the iret
 	TRACE_IRQS_OFF
 	movl TI_flags(%ebp), %ecx
-	testl $_TIF_ALLWORK_MASK, %ecx	# current->work
+	testl $_TIF_ALLWORK_MASK, %ecx	# current->work 检查是否还有其他工作要完成
 	jne syscall_exit_work
 
 restore_all:
@@ -699,6 +709,7 @@ END(syscall_trace_entry)
 	# perform syscall exit tracing
 	ALIGN
 syscall_exit_work:
+   # 检查是否系统调用跟踪、审计、单步执行，不需要则跳到work_pending（进行调度，信号处理）
 	testl $_TIF_WORK_SYSCALL_EXIT, %ecx
 	jz work_pending
 	TRACE_IRQS_ON
@@ -821,6 +832,19 @@ PTREGSCALL(vm86old)
         如果其中一个寄存器包含的选择符是一个段描述符，并且其DPL值小于CPL，那么清相应段的寄存器。
         这么做是为了禁止用户态的程序利用内核以前所用的段寄存器。
         如果不清这些寄存器，恶意的用户态程序可能利用它们来访问内核空间地址。
+ */
+
+/*
+ * http://blog.csdn.net/phenix_lord/article/details/45116689
+ *
+ * 在内核代码中，x86平台中断的执行过程：
+ * 1. 通过IDT中的中断描述符，调用common_interrupt
+ * 2. 通过common_interrupt，调用do_IRQ，完成vector到irq_desc的转换，进入Generic interrupt layer
+ *    调用处理函数generic_handle_irq_desc
+ * 3. 调用在中断初始化的时候按照中断特性（level触发，edge触发，simple等）初始化的irq_desc::handle_irq，
+ *    执行不同的通用处理接口
+ * 4. 这些通用处理接口会调用中断初始化的时候注册的外部中断处理函数，完成EOI等硬件相关操作，
+ *    并完成中断处理的相关控制
  */
 /*
  * Build the entry stubs and pointer table with some assembler magic.
@@ -1016,8 +1040,11 @@ END(alignment_check)
 
 ENTRY(divide_error)
 	RING0_INT_FRAME
+   # 当异常发生时，如果控制单元没有自动把一个硬件错误代码插入到栈中，
+   # 相应的汇编语言就会包含一条pushl $0的指令，在栈中（内核栈）垫上一个空值
 	pushl $0			# no error code
 	CFI_ADJUST_CFA_OFFSET 4
+   # 把高级C函数的地址压入栈中
 	pushl $do_divide_error
 	CFI_ADJUST_CFA_OFFSET 4
 	jmp error_code

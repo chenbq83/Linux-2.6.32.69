@@ -1064,6 +1064,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	if ((irqflags & IRQF_SHARED) && !dev_id)
 		return -EINVAL;
 
+   // 获得一个irq_desc对象
 	desc = irq_to_desc(irq);
 	if (!desc)
 		return -EINVAL;
@@ -1077,6 +1078,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 		handler = irq_default_primary_handler;
 	}
 
+   // 向内核申请一个中断反应对象并根据传进来的参数初始化
 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);
 	if (!action)
 		return -ENOMEM;
@@ -1087,6 +1089,7 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	action->name = devname;
 	action->dev_id = dev_id;
 
+   // 处理这个中断服务，如将这个中断添加到中断服务链表中
 	chip_bus_lock(irq, desc);
 	retval = __setup_irq(irq, desc, action);
 	chip_bus_sync_unlock(irq, desc);

@@ -163,7 +163,14 @@ request_threaded_irq(unsigned int irq, irq_handler_t handler,
 		     unsigned long flags, const char *name, void *dev);
 
 /*
- * irq：中断号
+ * 在Linux中，中断服务例程和中断处理程序（Interrupt Handler）是两个不同的概念。
+ * 可以这样认为，中断处理程序相当于某个中断向量的总处理程序（比如common_interrupt），
+ * 它与中断描述表（IDT）相关；中断服务例程（ISR）在中断处理过程被调用，它与IRQ
+ * 描述符相关，一般来说，它是设备驱动的一部分。
+ */
+
+/*
+ * irq：要申请的硬件中断号
  * handler：中断处理函数
  *   中断处理函数就是普通的C代码。其特别之处在于中断处理程序是在“中断上下文”中运行的。
  *   它的行为受到了某些限制：
@@ -171,6 +178,9 @@ request_threaded_irq(unsigned int irq, irq_handler_t handler,
  *   2. 不能使用可能引起阻塞的函数
  *   3. 不能使用可能引起调度的函数
  * flags：与中断管理有关的各种选项
+ *   若设置了IRQF_DISABLED，则表示中断处理程序是快速处理程序，快速处理程序被调用时屏蔽所有中断，
+ *   慢速处理程序不屏蔽。
+ *   若设置了IRQF_SHARED，则表示多个设备共享中断（多个中断服务程序将注册到这个中断号上）
  * name：设备名
  * dev：共享中断时使用
  */

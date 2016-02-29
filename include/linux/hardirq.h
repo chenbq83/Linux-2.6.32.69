@@ -78,6 +78,8 @@
 
 #define hardirq_count()	(preempt_count() & HARDIRQ_MASK)
 #define softirq_count()	(preempt_count() & SOFTIRQ_MASK)
+// 检查current_thread_info->preempt_count的hardirq和softirq来断定是否处于中断上下文
+// 如果这两个计数器之一为正，则返回非0
 #define irq_count()	(preempt_count() & (HARDIRQ_MASK | SOFTIRQ_MASK \
 				 | NMI_MASK))
 

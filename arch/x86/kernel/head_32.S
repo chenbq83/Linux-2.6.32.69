@@ -262,6 +262,19 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 10:
 	leal PDE_IDENT_ATTR(%edi),%ecx		/* Create PDE entry */
 	movl %ecx,(%edx)			/* Store identity PDE entry */
+   /*
+    * http://blog.chinaunix.net/uid-26859697-id-4456082.html
+    *
+    * 表示将同样的页全局目录项存放到edx偏移page_pde_offset，即__PAGE_OFFSET>>20.
+    * __PAGE_OFFSET的值取决于CONFIG_PAGE_OFFSET的配置，默认值是0xC0000000
+    * 那么__PAGE_OFFSET>>20即为0xC00，这是页目录的哪一项呢？
+    * 0xC00/4=768，也就是说页全局目录项中，第0项和第768项指向了相同的页表，意味着
+    * 映射到了相同的物理内存上面。
+    * 为什么这么做？页全局目录项768项的16进制为0x300，如果左移22位，转换为虚拟地址
+    * 的头则为0xC0000000，这很明显是页式映射后内核空间的虚拟地址起始。
+    * 那么可以知道这里的目的就是使得当前内核空间0xC0000000和0x000000000映射的是同一
+    * 物理内存，主要是为了此次临时分页映射方便访问数据
+    */
 	movl %ecx,page_pde_offset(%edx)		/* Store kernel PDE entry */
 	addl $4,%edx
 	movl $1024, %ecx
@@ -355,6 +368,7 @@ ENTRY(startup_32_smp)
 
 /*
  * Enable paging
+ * 开启分页单元
  */
 	movl pa(initial_page_table), %eax
 	movl %eax,%cr3		/* set the page table pointer.. */

@@ -250,10 +250,10 @@ out_unlock:
 
 struct irq_desc irq_desc[NR_IRQS] __cacheline_aligned_in_smp = {
 	[0 ... NR_IRQS-1] = {
-		.status = IRQ_DISABLED,
-		.chip = &no_irq_chip,
-		.handle_irq = handle_bad_irq,
-		.depth = 1,
+		.status = IRQ_DISABLED,      // 默认屏蔽中断
+		.chip = &no_irq_chip,        // 没有与chip相关联
+		.handle_irq = handle_bad_irq,// 未知（坏的）IRQ处理程序，输出IRQ信息供调试，更新CPU IRQ次数计数器，回应IRQ
+		.depth = 1,                  // 默认是第一层（没有嵌套中断）
 		.lock = __SPIN_LOCK_UNLOCKED(irq_desc->lock),
 	}
 };
@@ -472,6 +472,7 @@ unsigned int __do_IRQ(unsigned int irq)
 		/*
 		 * No locking required for CPU-local interrupts:
 		 */
+      // 确认中断
 		if (desc->chip->ack)
 			desc->chip->ack(irq);
 		if (likely(!(desc->status & IRQ_DISABLED))) {
@@ -483,7 +484,21 @@ unsigned int __do_IRQ(unsigned int irq)
 		return 1;
 	}
 
+   /*
+    * 加自旋锁。对于多CPU系统，这是必须的，因为同类型的其他中断可能产生，并被其他CPU处理，
+    * 没有自旋锁，IRQ描述符将被多个CPU同时访问
+    */
 	spin_lock(&desc->lock);
+
+   /*
+    * 确认中断。对于8259A PIC，由mask_and_ack_8259A函数完成确认，并禁用当前IRQ线。
+    * 屏蔽中断是为了确保该中断处理程序结束前，CPU不会又接到这种中断。
+    * 虽然CPU在处理中断会自动清除EFLAGS中的IF标志，但是在执行中断服务例程前，可能重新激活
+    * 本地中断，见handle_IRQ_event
+    *
+    * 在多处理器上，应答中断依赖于具体的中断类型。可能由ack方法做，也可能由end方法做。
+    * 不管怎样，在中断处理结束前，本地APIC不再接收同样的中断，尽管这种中断可以被其他CPU接收
+    */
 	if (desc->chip->ack)
 		desc->chip->ack(irq);
 	/*
@@ -491,16 +506,31 @@ unsigned int __do_IRQ(unsigned int irq)
 	 * WAITING is used by probe to mark irqs that are being tested
 	 */
 	status = desc->status & ~(IRQ_REPLAY | IRQ_WAITING);
+   // IRQ_PENDING表示一个IRQ已经出现在中断线上，且被应答，但还没有为它提供服务
 	status |= IRQ_PENDING; /* we _want_ to handle it */
 
 	/*
 	 * If the IRQ is disabled for whatever reason, we cannot
 	 * use the action we have.
+    *
+    * 现在开始检查是否真的需要处理中断。在三种情况下什么也不做：
+    * （1）IRQ_DISABLED被设置。即使在相应的IRQ线被禁止的情况下，do_IRQ也可能执行
+    * （2）IRQ_INPROGRESS被设置。在多CPU系统中，表示其他CPU正在处理同样中断的前一次发生。
+    *      Linux中，同类型中断的中断服务例程由同一个CPU处理，这样使得中断服务例程不必是
+    *      可重入的（在同一CPU上串行执行）
+    * （3）action == NULL
 	 */
 	action = NULL;
 	if (likely(!(status & (IRQ_DISABLED | IRQ_INPROGRESS)))) {
 		action = desc->action;
+      // 清除IRQ_PENDING标志
 		status &= ~IRQ_PENDING; /* we commit to handling */
+      /*
+       * 表示当前CPU正在处理该中断，其他CPU不应该处理同样的中断，而应该让给本CPU处理。
+       * 一旦设置了IRQ_INPROGRESS，其他CPU即使进行do_IRQ，也不会执行该程序段，则action==NULL，
+       * 其他CPU什么也不做。当调用handle_IRQ_event执行中断服务例程时，由于释放了自旋锁，其他
+       * CPU可能接收到同类型的中断（本CPU不会接收同类型中断），而进入do_IRQ，并设置IRQ_PENDING
+       */
 		status |= IRQ_INPROGRESS; /* we are handling it */
 	}
 	desc->status = status;
@@ -527,23 +557,35 @@ unsigned int __do_IRQ(unsigned int irq)
 	for (;;) {
 		irqreturn_t action_ret;
 
+      // 释放自旋锁
 		spin_unlock(&desc->lock);
 
 		action_ret = handle_IRQ_event(irq, action);
 		if (!noirqdebug)
 			note_interrupt(irq, desc, action_ret);
+      
+      /*
+       * 如果此时IRQ_PENDING处于清除状态，说明中断服务例程已经执行完毕，退出循环。
+       * 反之，说明在执行中断服务例程时，其他CPU进入过do_IRQ，并设置了IRQ_PENDING，
+       * 也就是说，其他CPU收到了同类型的中断。此时应该清楚IRQ_PENDING，并重新循环，
+       * 执行中断服务例程，处理其他CPU收到的中断
+       */
 
+      // 加自旋锁
 		spin_lock(&desc->lock);
 		if (likely(!(desc->status & IRQ_PENDING)))
 			break;
 		desc->status &= ~IRQ_PENDING;
 	}
+   // 所有中断处理完毕，清除IRQ_INPROGRESS
 	desc->status &= ~IRQ_INPROGRESS;
 
 out:
 	/*
 	 * The ->end() handler has to deal with interrupts which got
 	 * disabled while the handler was running.
+    * 结束中断处理，对end_8259A_irq()仅仅是重新激活中断线
+    * 对于多处理器，end应答中断（如果ack方法还没有做的话）
 	 */
 	desc->chip->end(irq);
 	spin_unlock(&desc->lock);

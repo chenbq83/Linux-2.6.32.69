@@ -233,6 +233,8 @@ struct irq_desc {
 #endif
 	const char		*name;
 } ____cacheline_internodealigned_in_smp;
+// ____cacheline_internodealigned_in_smp表示这个数据结构的存放按32字节（高速缓存行的大小）
+// 进行对齐，以便于将来存放在高速缓存并容易存取
 
 extern void arch_init_copy_chip_data(struct irq_desc *old_desc,
 					struct irq_desc *desc, int node);
